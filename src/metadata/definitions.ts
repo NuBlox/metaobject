@@ -17,34 +17,59 @@ export type RelationshipKind = "association" | "aggregation" | "composition";
  */
 export type ReferentialAction = "restrict" | "cascade" | "detach";
 
-export type ConstraintSeverity = "error" | "warning" | "info";
-
-/** Serializable constraint metadata. Built-ins use the well-known fields below; custom constraints may use options. */
 export interface ConstraintDefinition {
+  /** Registry key for the constraint evaluator. */
   readonly type: string;
   readonly minimum?: number;
   readonly maximum?: number;
   readonly value?: number;
   readonly pattern?: string;
   readonly flags?: string;
-  readonly options?: Readonly<Record<string, unknown>>;
   readonly message?: string;
-  readonly severity?: ConstraintSeverity;
+  /** Additional serializable evaluator-specific parameters. */
+  readonly parameters?: Readonly<Record<string, unknown>>;
 }
 
-/** Cross-field/object-level validation rule resolved through the constraint registry. */
-export interface ObjectConstraintDefinition {
-  readonly type: string;
-  readonly path?: string;
-  readonly options?: Readonly<Record<string, unknown>>;
-  readonly message?: string;
-  readonly severity?: ConstraintSeverity;
-}
-
-/** A computed attribute delegates calculation to a named runtime behaviour. */
 export interface ComputedAttributeDefinition {
-  readonly behavior: string;
+  /** Registry key for a synchronous computation handler. */
+  readonly resolver: string;
   readonly dependencies?: readonly string[];
+  /** Cache the computed value until the object mutates. Defaults to false. */
+  readonly cache?: boolean;
+}
+
+export interface ObjectRuleDefinition {
+  readonly id: string;
+  /** Registry key for an object-level validation evaluator. */
+  readonly type: string;
+  readonly message?: string;
+  readonly severity?: "error" | "warning" | "info";
+  readonly parameters?: Readonly<Record<string, unknown>>;
+}
+
+export interface OperationDefinition {
+  /** Registry key for the operation handler. */
+  readonly handler: string;
+  readonly description?: string;
+}
+
+export interface EventDefinition {
+  readonly description?: string;
+}
+
+export type HookPhase =
+  | "beforeValidate"
+  | "afterValidate"
+  | "beforeSave"
+  | "afterSave"
+  | "beforeDelete"
+  | "afterDelete";
+
+export interface HookDefinition {
+  readonly id: string;
+  readonly phase: HookPhase;
+  /** Registry key for the hook handler. */
+  readonly handler: string;
 }
 
 export interface AttributeDefinition {
@@ -56,6 +81,7 @@ export interface AttributeDefinition {
   readonly unique?: boolean;
   readonly default?: unknown;
   readonly constraints?: readonly ConstraintDefinition[];
+  /** Virtual value resolved by the behaviour registry rather than stored directly. */
   readonly computed?: ComputedAttributeDefinition;
 }
 
@@ -99,27 +125,6 @@ export interface IndexDefinition {
   readonly attributes: readonly IndexAttributeDefinition[];
 }
 
-export interface OperationDefinition {
-  /** Runtime operation handler registered under this name. */
-  readonly behavior: string;
-  readonly description?: string;
-}
-
-export interface EventDefinition {
-  readonly description?: string;
-}
-
-export type BehaviorHook =
-  | "beforeSet"
-  | "afterSet"
-  | "beforeValidate"
-  | "afterValidate"
-  | "beforeOperation"
-  | "afterOperation";
-
-export type HookDefinitionMap = Readonly<Partial<Record<BehaviorHook, readonly string[]>>>;
-export type OperationDefinitionMap = Readonly<Record<string, OperationDefinition>>;
-export type EventDefinitionMap = Readonly<Record<string, EventDefinition>>;
 export type AttributeDefinitionMap = Readonly<Record<string, AttributeDefinition>>;
 export type RelationshipDefinitionMap = Readonly<Record<string, RelationshipDefinition>>;
 
@@ -145,10 +150,10 @@ export interface ObjectTypeDefinition<
   readonly attributes: A;
   readonly relationships?: R;
   readonly indexes?: readonly IndexDefinition[];
-  readonly constraints?: readonly ObjectConstraintDefinition[];
-  readonly operations?: OperationDefinitionMap;
-  readonly events?: EventDefinitionMap;
-  readonly hooks?: HookDefinitionMap;
+  readonly rules?: readonly ObjectRuleDefinition[];
+  readonly operations?: Readonly<Record<string, OperationDefinition>>;
+  readonly events?: Readonly<Record<string, EventDefinition>>;
+  readonly hooks?: readonly HookDefinition[];
 }
 
 export interface ResolvedObjectTypeDefinition extends ObjectTypeDefinition {
