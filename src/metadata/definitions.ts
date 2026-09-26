@@ -18,13 +18,58 @@ export type RelationshipKind = "association" | "aggregation" | "composition";
 export type ReferentialAction = "restrict" | "cascade" | "detach";
 
 export interface ConstraintDefinition {
-  readonly type: "minLength" | "maxLength" | "range" | "pattern";
+  /** Registry key for the constraint evaluator. */
+  readonly type: string;
   readonly minimum?: number;
   readonly maximum?: number;
   readonly value?: number;
   readonly pattern?: string;
   readonly flags?: string;
   readonly message?: string;
+  /** Additional serializable evaluator-specific parameters. */
+  readonly parameters?: Readonly<Record<string, unknown>>;
+}
+
+export interface ComputedAttributeDefinition {
+  /** Registry key for a synchronous computation handler. */
+  readonly resolver: string;
+  readonly dependencies?: readonly string[];
+  /** Cache the computed value until the object mutates. Defaults to false. */
+  readonly cache?: boolean;
+}
+
+export interface ObjectRuleDefinition {
+  readonly id: string;
+  /** Registry key for an object-level validation evaluator. */
+  readonly type: string;
+  readonly message?: string;
+  readonly severity?: "error" | "warning" | "info";
+  readonly parameters?: Readonly<Record<string, unknown>>;
+}
+
+export interface OperationDefinition {
+  /** Registry key for the operation handler. */
+  readonly handler: string;
+  readonly description?: string;
+}
+
+export interface EventDefinition {
+  readonly description?: string;
+}
+
+export type HookPhase =
+  | "beforeValidate"
+  | "afterValidate"
+  | "beforeSave"
+  | "afterSave"
+  | "beforeDelete"
+  | "afterDelete";
+
+export interface HookDefinition {
+  readonly id: string;
+  readonly phase: HookPhase;
+  /** Registry key for the hook handler. */
+  readonly handler: string;
 }
 
 export interface AttributeDefinition {
@@ -36,6 +81,8 @@ export interface AttributeDefinition {
   readonly unique?: boolean;
   readonly default?: unknown;
   readonly constraints?: readonly ConstraintDefinition[];
+  /** Virtual value resolved by the behaviour registry rather than stored directly. */
+  readonly computed?: ComputedAttributeDefinition;
 }
 
 export interface RelationshipDefinition {
@@ -103,6 +150,10 @@ export interface ObjectTypeDefinition<
   readonly attributes: A;
   readonly relationships?: R;
   readonly indexes?: readonly IndexDefinition[];
+  readonly rules?: readonly ObjectRuleDefinition[];
+  readonly operations?: Readonly<Record<string, OperationDefinition>>;
+  readonly events?: Readonly<Record<string, EventDefinition>>;
+  readonly hooks?: readonly HookDefinition[];
 }
 
 export interface ResolvedObjectTypeDefinition extends ObjectTypeDefinition {

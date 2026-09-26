@@ -6,10 +6,11 @@ A standalone, application-agnostic metadata-driven object model and runtime for 
 
 ## Design principles
 
-- **Metadata is the source of truth.** Object definitions describe attributes, types, relationships, constraints and indexes.
+- **Metadata is the source of truth.** Object definitions describe attributes, types, relationships, constraints, behaviours and indexes.
 - **Compile-time and runtime models coexist.** Metadata declared with `as const` can infer TypeScript value shapes; metadata loaded from JSON or a database receives the same runtime validation.
 - **Storage is pluggable.** The core package exposes a storage contract rather than embedding MySQL, PostgreSQL or another database.
 - **Relationships are first-class.** Object relationships are distinct from primitive attributes and can be coordinated bidirectionally through `ObjectGraph`.
+- **Behaviours remain serializable.** Metadata stores stable handler names; executable functions live in runtime registries.
 - **Type systems are extensible.** Applications can register additional attribute types without changing the kernel.
 - **Optimistic concurrency is part of the object contract.** Storage adapters enforce version checks consistently.
 
@@ -121,6 +122,20 @@ M2 adds single inheritance and semantic relationship kinds. `ObjectTypeRegistry.
 await repository.saveAll([team, person]);
 ```
 
+## Constraints and behaviours
+
+M3 makes validation and object behaviour extensible while preserving serializable metadata.
+
+- `ConstraintRegistry` supports built-in and custom attribute constraints.
+- Object-level `rules` support cross-field validation with error, warning and info severities.
+- Computed attributes reference named resolvers and are excluded from persisted values and create-input types.
+- `BehaviorRegistry` hosts computed resolvers, operation handlers and lifecycle hooks.
+- `ObjectBehaviorRuntime` evaluates computed values, invokes declared operations and emits declared domain events.
+- `EventBus` provides synchronous event dispatch to named or wildcard listeners.
+- Rules, operations, events and hooks are inherited through the M2 object type hierarchy with shadow protection.
+
+See `docs/constraints-behaviors.md`.
+
 ## Storage model
 
 The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` provides the M0 reference implementation and test harness.
@@ -163,7 +178,13 @@ The standalone kernel now includes:
 - typed attribute enforcement
 - defaults and nullability
 - first-class object references/relationships
-- validation constraints
+- extensible validation constraints
+- cross-field/object rules and validation severities
+- computed attributes
+- behaviour and operation registries
+- validation lifecycle hooks
+- declared domain events and event dispatch
+- computed-field-aware create-input inference
 - dirty tracking
 - serialization and snapshots
 - object identity and versioning
@@ -187,6 +208,7 @@ The standalone kernel now includes:
 - aggregation/composition relationship kinds
 - exclusive composite-parent enforcement
 - composition lifecycle cascade
+- inherited rules, operations, events and hooks
 
 ## Roadmap
 
@@ -198,9 +220,9 @@ Implemented: inverse synchronization, referential integrity, ownership metadata,
 
 Implemented: resolved base types, inherited attributes/relationships/indexes/defaults, abstract/sealed semantics, lineage/type queries, subtype-compatible relationships, compile-time derived metadata inference and exclusive composition lifecycle rules.
 
-### M3 — Constraint and behaviour registry
+### M3 — Constraint and behaviour registry ✅
 
-Custom constraints, cross-field rules, computed attributes, hooks, events and operations.
+Implemented: custom constraints, cross-field rules, severity-aware validation, computed attributes, runtime behaviour registries, validation hooks, declared events, operations and inheritance of behaviour metadata.
 
 ### M4 — Query engine
 
