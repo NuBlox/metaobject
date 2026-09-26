@@ -35,6 +35,15 @@ function codeFor(type: string): string {
   return type.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[^a-zA-Z0-9]+/g, "_").toUpperCase();
 }
 
+function compatibilityCode(value: unknown, definition: ConstraintDefinition | ObjectRuleDefinition): string {
+  if (definition.type === "range" && typeof value === "number") {
+    const constraint = definition as ConstraintDefinition;
+    if (constraint.minimum !== undefined && value < constraint.minimum) return "MINIMUM";
+    if (constraint.maximum !== undefined && value > constraint.maximum) return "MAXIMUM";
+  }
+  return codeFor(definition.type);
+}
+
 export class ConstraintRegistry {
   readonly #evaluators = new Map<string, ConstraintEvaluator>();
 
@@ -59,7 +68,7 @@ export class ConstraintRegistry {
     const message = typeof result === "string"
       ? result
       : context.definition.message ?? `${context.path} failed constraint '${context.definition.type}'.`;
-    return issue(codeFor(context.definition.type), context.path, context.definition.message ?? message, severity);
+    return issue(compatibilityCode(value, context.definition), context.path, context.definition.message ?? message, severity);
   }
 
   private registerBuiltins(): void {
