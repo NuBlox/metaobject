@@ -84,7 +84,7 @@ test("metadata drafts use optimistic revision concurrency", async () => {
   await assert.rejects(() => catalog.saveDraft(V1, first.revision), /concurrency conflict/i);
 });
 
-test("publication validates hierarchy and relationships before activation", async () => {
+test("batch publication validates a dependent metadata graph before activation", async () => {
   const types = createDefaultTypeRegistry();
   const catalog = new MetadataCatalog(new MemoryMetadataStore(), types);
   const Parent = defineObjectType({
@@ -106,11 +106,11 @@ test("publication validates hierarchy and relationships before activation", asyn
   const childDraft = await catalog.saveDraft(Child);
 
   await assert.rejects(() => catalog.publish(Child.id, Child.version, childDraft.revision), /unknown base object type/i);
-  const publishedParent = await catalog.publish(Parent.id, Parent.version, parentDraft.revision);
-  assert.equal(publishedParent.status, "published");
-  const refreshedChild = await catalog.get(Child.id, Child.version);
-  const publishedChild = await catalog.publish(Child.id, Child.version, refreshedChild.revision);
-  assert.equal(publishedChild.status, "published");
+  const published = await catalog.publishMany([
+    { objectTypeId: Parent.id, version: Parent.version, expectedRevision: parentDraft.revision },
+    { objectTypeId: Child.id, version: Child.version, expectedRevision: childDraft.revision },
+  ]);
+  assert.deepEqual(published.map((record) => record.status), ["published", "published"]);
 
   const runtime = await catalog.createPublishedRegistry();
   assert.equal(runtime.isA(Child.id, Parent.id), true);
