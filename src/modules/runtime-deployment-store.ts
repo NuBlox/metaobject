@@ -1,3 +1,4 @@
+import { MetadataError } from "../errors/errors.js";
 import type { RuntimeProfileUpgradePlan } from "./runtime-profile-upgrade.js";
 
 export type RuntimeDeploymentStatus = "planned" | "running" | "failed" | "completed" | "cancelled";
@@ -9,6 +10,35 @@ export interface RuntimeDeploymentStepEvidence {
   readonly externalReference?: string;
   readonly details?: Readonly<Record<string, unknown>>;
 }
+
+export type RuntimeDeploymentJournalKind =
+  | "deployment-created"
+  | "deployment-approved"
+  | "deployment-started"
+  | "deployment-cancelled"
+  | "deployment-completed"
+  | "step-leased"
+  | "step-completed"
+  | "step-failed"
+  | "step-retry-requested"
+  | "step-recovered-completed"
+  | "step-reconciliation-unknown";
+
+export interface RuntimeDeploymentJournalEntry {
+  /** 1-based monotonically increasing sequence within one deployment. */
+  readonly sequence: number;
+  readonly kind: RuntimeDeploymentJournalKind;
+  readonly occurredAt: string;
+  readonly stepId?: string;
+  readonly attempt?: number;
+  readonly executorId?: string;
+  readonly idempotencyKey?: string;
+  readonly error?: string;
+  readonly recoveryResolution?: "retry" | "completed" | "unknown";
+  readonly evidence?: RuntimeDeploymentStepEvidence;
+}
+
+export type RuntimeDeploymentJournalEvent = Omit<RuntimeDeploymentJournalEntry, "sequence">;
 
 export interface RuntimeDeploymentStepState {
   readonly stepId: string;
@@ -34,6 +64,8 @@ export interface RuntimeDeploymentRecord {
   /** Immutable M16 plan snapshot captured when the deployment is created. */
   readonly plan: RuntimeProfileUpgradePlan;
   readonly steps: readonly RuntimeDeploymentStepState[];
+  /** Append-only audit trail. Optional only for backwards-compatible legacy records. */
+  readonly journal?: readonly RuntimeDeploymentJournalEntry[];
   readonly approvedAt?: string;
   readonly startedAt?: string;
   readonly completedAt?: string;
@@ -58,4 +90,49 @@ export interface RuntimeDeploymentBundle {
   readonly format: "nublox-metaobject-runtime-deployments";
   readonly formatVersion: 1;
   readonly records: readonly RuntimeDeploymentRecord[];
+}
+
+export function appendRuntimeDeploymentJournal(
+  record: Pick<RuntimeDeploymentRecord, "journal">,
+  ...events: readonly RuntimeDeploymentJournalEvent[]
+): readonly RuntimeDeploymentJournalEntry[] {
+  const existing = record.journal ?? [];
+  let sequence = existing.length === 0 ? 0 : existing[existing.length - 1]!.sequence;
+  return [
+    ...structuredClone(existing),
+    ...events.map((event) => ({ ...structuredClone(event), sequence: ++sequence })),
+  ];
+}
+
+/** Validate sequence/order and basic event integrity before persistence/import. */
+export function validateRuntimeDeploymentJournal(record: Pick<RuntimeDeploymentRecord, "deploymentId" | "journal">): void {
+  const journal = record.journal;
+  if (journal === undefined) return;
+
+  for (let index = 0; index < journal.length; index += 1) {
+    const entry = journal[index]!;
+    if (entry.sequence !== index + 1) {
+      throw new MetadataError(
+        `Runtime deployment '${record.deploymentId}' journal sequence ${entry.sequence} is invalid at position ${index + 1}.`,
+      );
+    }
+    if (!entry.occurredAt.trim()) {
+      throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} is missing occurredAt.`);
+    }
+    if (entry.stepId !== undefined && !entry.stepId.trim()) {
+      throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} has an empty stepId.`);
+    }
+    if (entry.attempt !== undefined && (!Number.isSafeInteger(entry.attempt) || entry.attempt < 1)) {
+      throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} has an invalid attempt.`);
+    }
+    if (entry.executorId !== undefined && !entry.executorId.trim()) {
+      throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} has an empty executorId.`);
+    }
+    if (entry.idempotencyKey !== undefined && !entry.idempotencyKey.trim()) {
+      throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} has an empty idempotencyKey.`);
+    }
+    if (entry.error !== undefined && !entry.error.trim()) {
+      throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} has an empty error.`);
+    }
+  }
 }
