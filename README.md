@@ -19,6 +19,7 @@ A standalone, application-agnostic metadata-driven object model and runtime for 
 - **Modules make dependencies explicit.** Capability-level metadata releases declare exact object versions and version-ranged module dependencies.
 - **Released module graphs are durable.** Published modules persist the exact dependency versions actually used by a release.
 - **Interrupted releases are recoverable.** A durable `releasing` state preserves the exact locked manifest while metadata publication is atomic at the store boundary.
+- **Runtime schemas are lockable.** Module-set lockfiles preserve exact module and object-type versions for reproducible environments.
 - **Optimistic concurrency is explicit.** Runtime objects, metadata drafts and module drafts use version/revision checks.
 
 ## Quick start
@@ -147,6 +148,29 @@ A release is locked as `releasing` before migrations begin. The exact module man
 
 If processing fails after the lock is acquired, the module deliberately remains `releasing`. `abort()` can return it to draft only before any member has been published; `recover()` completes an interrupted release only after every member is published. See `docs/transactional-module-release.md`.
 
+## Runtime module sets
+
+M13 resolves one or more published root-module requirements into an exact, portable runtime lockfile.
+
+```ts
+const resolver = new MetadataModuleSetResolver(
+  moduleCatalog,
+  metadataCatalog,
+  typeRegistry,
+);
+
+const lockfile = await resolver.resolve([
+  { moduleId: "workforce", minimumVersion: 2 },
+  { moduleId: "assets", minimumVersion: 3, maximumVersion: 5 },
+]);
+
+const objectTypes = await resolver.buildObjectTypeRegistry(lockfile);
+```
+
+Root requirements resolve against published module versions, but transitive dependencies always follow each selected module's persisted release manifest exactly. This prevents a historical module from silently drifting to a newer compatible dependency after publication.
+
+Module-set validation rejects exact-version conflicts between roots, altered dependency/member locks, missing exact dependencies, unreachable modules and duplicate object-type ownership. The resulting `ObjectTypeRegistry` is reconstructed from the exact published object-type versions recorded in the lockfile. See `docs/runtime-module-sets.md`.
+
 ## Storage model
 
 The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` is the reference implementation and test harness.
@@ -161,7 +185,7 @@ Database-specific adapters remain separate packages:
 
 ## Implemented scope
 
-The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime objects; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; governed publication; portable metadata bundles; TypeScript/validator/JSON Schema generation; semantic schema evolution; portable migration planning; single/batch release coordination; versioned metadata modules; dependency resolution; module-wide releases; a durable module catalogue with locked historical manifests; atomic metadata publication batches; durable release locks; and interrupted-module release recovery.
+The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime objects; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; governed publication; portable metadata bundles; TypeScript/validator/JSON Schema generation; semantic schema evolution; portable migration planning; single/batch release coordination; versioned metadata modules; dependency resolution; module-wide releases; a durable module catalogue with locked historical manifests; atomic metadata publication batches; durable release locks; interrupted-module release recovery; and exact runtime module-set lockfiles with deterministic object-registry reconstruction.
 
 ## Roadmap
 
@@ -200,6 +224,9 @@ Implemented: pluggable module storage, optimistic module revisions, lifecycle ma
 
 ### M12 — Transactional module release ✅
 Implemented: durable `releasing` locks, exact manifest locking before migrations, atomic metadata-member publication, release recovery and guarded abort semantics.
+
+### M13 — Runtime module sets ✅
+Implemented: multi-root module requirements, exact historical dependency locking, portable module-set lockfiles, cross-root version-conflict detection, lockfile validation and exact runtime object-registry reconstruction.
 
 ## Development
 
