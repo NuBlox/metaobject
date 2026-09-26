@@ -1,6 +1,6 @@
 # Runtime integrity and lifecycle
 
-M13 closes the gap between metadata that declares runtime semantics and repository/storage behaviour that enforces them.
+M15 closes the gap between metadata that declares runtime semantics and repository/storage behaviour that enforces them.
 
 ## Lifecycle hooks
 
@@ -32,7 +32,7 @@ storage delete / state transition
 afterDelete
 ```
 
-`beforeValidate` / `afterValidate` continue to be executed by `Validator`; M13 wires the save/delete phases into the repository.
+`beforeValidate` / `afterValidate` continue to be executed by `Validator`; M15 wires the save/delete phases into the repository.
 
 `beforeSave` executes before validation, so lifecycle behaviour can populate or normalize values before the object is validated. `afterSave` executes only after persistence succeeds and therefore observes the committed object version in `clean` state.
 
@@ -68,7 +68,7 @@ This is materially stronger than the earlier logical-batch behaviour: a stale ve
 
 ## Runtime uniqueness
 
-M13 enforces both forms of uniqueness already present in metadata:
+M15 enforces both forms of uniqueness already present in metadata:
 
 ### Unique attributes
 
