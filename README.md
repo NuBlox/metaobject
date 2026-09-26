@@ -2,7 +2,7 @@
 
 A standalone, application-agnostic metadata-driven object model and runtime for TypeScript.
 
-`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, reproducible code generation and schema evolution planning. It has no dependency on NuBlox application products or on any database engine.
+`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, reproducible code generation, schema evolution planning and governed metadata releases. It has no dependency on NuBlox application products or on any database engine.
 
 ## Design principles
 
@@ -15,6 +15,7 @@ A standalone, application-agnostic metadata-driven object model and runtime for 
 - **Metadata persistence is normalized.** Definitions flatten into database-ready metadata records.
 - **Generated artifacts are reproducible.** TypeScript, validators, JSON Schema and adapter artifacts are regenerated from metadata rather than becoming a second source of truth.
 - **Schema evolution is semantic.** Version changes are classified by compatibility and translated into portable migration plans.
+- **Releases are gated.** Breaking changes, blocking migrations and optimistic draft revisions are enforced before publication.
 - **Optimistic concurrency is explicit.** Runtime objects and metadata drafts use version/revision checks.
 
 ## Quick start
@@ -120,15 +121,37 @@ const diff = diffObjectTypes(assetV1, assetV2);
 const plan = new MigrationPlanner().plan(diff);
 ```
 
-Changes are classified as:
-
-- `compatible`
-- `requires-migration`
-- `breaking`
-
-The migration planner emits ordered, database-neutral steps for metadata application, validation, backfill, data transformation, index rebuilds, cleanup and manual review. Adapter packages can register supplemental steps for dialect-specific work such as MySQL DDL.
+Changes are classified as `compatible`, `requires-migration`, or `breaking`. The migration planner emits ordered, database-neutral steps for metadata application, validation, backfill, data transformation, index rebuilds, cleanup and manual review. Adapter packages can register supplemental steps for dialect-specific work such as MySQL DDL.
 
 `MetadataEvolution` connects the same diff/planning engine directly to persisted `MetadataCatalog` versions. See `docs/schema-evolution.md`.
+
+## Metadata release pipeline
+
+M9 coordinates M6–M8 into a governed release process.
+
+```ts
+const releases = new MetadataReleaseManager(catalog);
+
+const preparation = await releases.prepare("example.asset", 2);
+const result = await releases.release("example.asset", 2, {
+  migrationExecutor,
+  approveBreaking: true,
+});
+```
+
+The release manager:
+
+- compares the draft with the latest published version
+- builds a semantic diff and migration plan
+- blocks breaking changes until explicitly approved
+- blocks migration-required releases until executable blocking steps have run
+- rechecks the exact draft revision before publication
+- publishes the prepared metadata version
+- returns reproducible TypeScript, validator, JSON Schema and metadata artifacts
+
+`prepareMany()` / `releaseMany()` extend the same guarantees to mutually dependent metadata graphs and publish them through `MetadataCatalog.publishMany()` after every draft revision and migration gate succeeds.
+
+See `docs/metadata-release-pipeline.md`.
 
 ## Storage model
 
@@ -144,7 +167,7 @@ Database-specific adapters remain separate packages:
 
 ## Implemented scope
 
-The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime object creation; defaults/nullability; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; lifecycle-managed metadata publication; portable metadata bundles; TypeScript interfaces/create-inputs/classes; generated validators; JSON Schema; an extensible artifact generator registry; semantic schema diffs; compatibility classification; and portable migration planning.
+The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime object creation; defaults/nullability; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; lifecycle-managed metadata publication; portable metadata bundles; TypeScript interfaces/create-inputs/classes; generated validators; JSON Schema; an extensible artifact generator registry; semantic schema diffs; compatibility classification; portable migration planning; and single/batch governed metadata release coordination.
 
 ## Roadmap
 
@@ -179,6 +202,10 @@ Implemented: TypeScript interfaces/create-inputs/classes, generated validators, 
 ### M8 — Schema evolution ✅
 
 Implemented: semantic version diffs, compatibility classification, catalogue-backed comparisons, portable migration plans and adapter/application migration hooks.
+
+### M9 — Metadata release pipeline ✅
+
+Implemented: single and batch release preparation, migration execution gates, explicit breaking-change approval, optimistic release locking, publication coordination and generated release artifacts.
 
 ## Development
 
