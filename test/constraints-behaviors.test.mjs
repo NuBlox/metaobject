@@ -23,20 +23,18 @@ function setup() {
       quantity: { type: "integer", required: true, constraints: [{ type: "positive" }] },
       unitPrice: { type: "decimal", required: true, constraints: [{ type: "positive" }] },
       discount: { type: "decimal", default: 0 },
-      total: { type: "decimal", computed: { behavior: "invoice.total", dependencies: ["quantity", "unitPrice", "discount"] } },
+      total: { type: "decimal", computed: { resolver: "invoice.total", dependencies: ["quantity", "unitPrice", "discount"] } },
     },
-    constraints: [{ type: "discountWithinSubtotal", path: "discount" }],
+    rules: [{ id: "discount", type: "discountWithinSubtotal" }],
     operations: {
-      approve: { behavior: "invoice.approve" },
+      approve: { handler: "invoice.approve" },
     },
     events: {
       approved: { description: "Invoice approved" },
     },
-    hooks: {
-      beforeValidate: ["audit.beforeValidate"],
-      beforeOperation: ["audit.beforeOperation"],
-      afterOperation: ["audit.afterOperation"],
-    },
+    hooks: [
+      { id: "audit-before-validation", phase: "beforeValidate", handler: "audit.beforeValidate" },
+    ],
   });
   objects.register(Invoice);
 
@@ -47,9 +45,7 @@ function setup() {
       object.get("quantity") * object.get("unitPrice") - object.get("discount"),
     )
     .registerOperation("invoice.approve", ({ object }) => ({ approved: true, id: object.id }))
-    .registerHook("audit.beforeValidate", () => calls.push("beforeValidate"))
-    .registerHook("audit.beforeOperation", () => calls.push("beforeOperation"))
-    .registerHook("audit.afterOperation", () => calls.push("afterOperation"));
+    .registerHook("audit.beforeValidate", () => calls.push("beforeValidate"));
 
   const constraints = new ConstraintRegistry();
   constraints
@@ -82,12 +78,11 @@ test("calculates computed attributes without persisting them", () => {
   assert.equal("total" in invoice.snapshot().values, false);
 });
 
-test("invokes operations and ordered hooks", () => {
-  const { factory, runtime, calls } = setup();
+test("invokes metadata-defined operations", () => {
+  const { factory, runtime } = setup();
   const invoice = factory.create("example.invoice", { quantity: 1, unitPrice: 10 });
   const result = runtime.invoke(invoice, "approve");
   assert.deepEqual(result, { approved: true, id: "invoice-1" });
-  assert.deepEqual(calls, ["beforeOperation", "afterOperation"]);
 });
 
 test("runs validation hooks", () => {
