@@ -1,4 +1,5 @@
-import type { ObjectTypeDefinition } from "../metadata/definitions.js";
+import { MetadataError } from "../errors/errors.js";
+import type { ObjectTypeDefinition, ResolvedObjectTypeDefinition } from "../metadata/definitions.js";
 import type { InferValues } from "../metadata/inference.js";
 import type { ObjectTypeRegistry } from "../registry/object-type-registry.js";
 import type { TypeRegistry } from "../types/type-registry.js";
@@ -16,19 +17,27 @@ export class ObjectFactory {
 
   create<const D extends ObjectTypeDefinition>(definition: D, values: InferValues<D>): MetaObject<InferValues<D>>;
   create(objectTypeId: string, values?: Record<string, unknown>): MetaObject;
-  create(definitionOrId: ObjectTypeDefinition | string, values: Record<string, unknown> = {}): MetaObject {
-    const definition = typeof definitionOrId === "string" ? this.objects.get(definitionOrId) : definitionOrId;
-    const object = new MetaObject(this.idGenerator(), definition, this.types);
+  create(
+    definitionOrId: ObjectTypeDefinition | string,
+    values: Record<string, unknown> = {},
+  ): MetaObject {
+    const definition = this.resolveDefinition(definitionOrId);
+    this.assertConcrete(definition);
+    const object = new MetaObject(this.idGenerator(), definition, this.types, {
+      isTypeAssignable: (actual, expected) => this.objects.isA(actual, expected),
+    });
     this.applyDefaults(object);
     for (const [name, value] of Object.entries(values)) object.set(name, value);
     return object;
   }
 
   hydrate(snapshot: ObjectSnapshot): MetaObject {
-    const definition = this.objects.get(snapshot.type);
+    const definition = this.objects.resolve(snapshot.type);
+    this.assertConcrete(definition);
     const object = new MetaObject(snapshot.id, definition, this.types, {
       version: snapshot.version,
       state: "clean",
+      isTypeAssignable: (actual, expected) => this.objects.isA(actual, expected),
     });
     const values: Record<string, unknown> = {};
     for (const [name, storedValue] of Object.entries(snapshot.values)) {
@@ -45,6 +54,22 @@ export class ObjectFactory {
     object.load(values, snapshot.relationships);
     object.markPersisted(snapshot.version);
     return object;
+  }
+
+  private resolveDefinition(definitionOrId: ObjectTypeDefinition | string): ResolvedObjectTypeDefinition {
+    if (typeof definitionOrId === "string") return this.objects.resolve(definitionOrId);
+    if (!this.objects.has(definitionOrId.id)) {
+      throw new MetadataError(
+        `Object type '${definitionOrId.id}' must be registered before instances can be created.`,
+      );
+    }
+    return this.objects.resolve(definitionOrId.id);
+  }
+
+  private assertConcrete(definition: ResolvedObjectTypeDefinition): void {
+    if (definition.abstract) {
+      throw new MetadataError(`Cannot instantiate abstract object type '${definition.id}'.`);
+    }
   }
 
   private applyDefaults(object: MetaObject): void {
