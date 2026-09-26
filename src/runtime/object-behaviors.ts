@@ -68,12 +68,7 @@ export class ObjectBehaviorRuntime {
   }
 
   private cacheToken(object: MetaObject): string {
-    return JSON.stringify([
-      object.version,
-      object.state,
-      object.changedAttributes(),
-      object.changedRelationships(),
-    ]);
+    return `${object.version}:${object.state}:${object.mutationRevision}`;
   }
 
   private assertComputedValue(attribute: string, definition: AttributeDefinition, value: unknown): void {
