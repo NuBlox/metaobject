@@ -1,3 +1,4 @@
+export * from "./behavior/behavior-registry.js";
 export * from "./codegen/typescript-generator.js";
 export * from "./errors/errors.js";
 export * from "./metadata/definitions.js";
