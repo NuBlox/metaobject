@@ -9,6 +9,7 @@ import {
   ObjectTypeRegistry,
   Validator,
   createDefaultTypeRegistry,
+  defineDerivedObjectType,
   defineObjectType,
 } from "../dist/index.js";
 
@@ -102,4 +103,37 @@ test("emits only declared domain events", () => {
   assert.equal(events[0].object.id, invoice.id);
   assert.deepEqual(events[0].payload, { by: "tester" });
   assert.throws(() => runtime.emit(invoice, "undeclared"), /Unknown event/);
+});
+
+test("derived object types inherit rules operations events and hooks", () => {
+  const types = createDefaultTypeRegistry();
+  const objects = new ObjectTypeRegistry(types);
+  const Base = defineObjectType({
+    id: "example.behavior-base",
+    name: "BehaviorBase",
+    version: 1,
+    attributes: { name: { type: "string" } },
+    rules: [{ id: "base-rule", type: "baseRule" }],
+    operations: { activate: { handler: "base.activate" } },
+    events: { activated: {} },
+    hooks: [{ id: "base-hook", phase: "beforeValidate", handler: "base.beforeValidate" }],
+  });
+  const Derived = defineDerivedObjectType(Base, {
+    id: "example.behavior-derived",
+    name: "BehaviorDerived",
+    version: 1,
+    baseType: Base.id,
+    attributes: { code: { type: "string" } },
+    rules: [{ id: "derived-rule", type: "derivedRule" }],
+    operations: { archive: { handler: "derived.archive" } },
+    events: { archived: {} },
+    hooks: [{ id: "derived-hook", phase: "afterValidate", handler: "derived.afterValidate" }],
+  });
+  objects.register(Base);
+  objects.register(Derived);
+  const resolved = objects.resolve(Derived.id);
+  assert.deepEqual(resolved.rules.map((rule) => rule.id), ["base-rule", "derived-rule"]);
+  assert.deepEqual(Object.keys(resolved.operations), ["activate", "archive"]);
+  assert.deepEqual(Object.keys(resolved.events), ["activated", "archived"]);
+  assert.deepEqual(resolved.hooks.map((hook) => hook.id), ["base-hook", "derived-hook"]);
 });
