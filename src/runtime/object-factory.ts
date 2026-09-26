@@ -1,6 +1,7 @@
+import { BehaviorRegistry } from "../behavior/behavior-registry.js";
 import { MetadataError } from "../errors/errors.js";
 import type { ObjectTypeDefinition, ResolvedObjectTypeDefinition } from "../metadata/definitions.js";
-import type { InferValues } from "../metadata/inference.js";
+import type { InferInputValues, InferValues } from "../metadata/inference.js";
 import type { ObjectTypeRegistry } from "../registry/object-type-registry.js";
 import type { TypeRegistry } from "../types/type-registry.js";
 import { MetaObject } from "./meta-object.js";
@@ -13,9 +14,10 @@ export class ObjectFactory {
     private readonly objects: ObjectTypeRegistry,
     private readonly types: TypeRegistry,
     private readonly idGenerator: IdGenerator = () => crypto.randomUUID(),
+    readonly behaviors: BehaviorRegistry = new BehaviorRegistry(),
   ) {}
 
-  create<const D extends ObjectTypeDefinition>(definition: D, values: InferValues<D>): MetaObject<InferValues<D>>;
+  create<const D extends ObjectTypeDefinition>(definition: D, values: InferInputValues<D>): MetaObject<InferValues<D>>;
   create(objectTypeId: string, values?: Record<string, unknown>): MetaObject;
   create(
     definitionOrId: ObjectTypeDefinition | string,
@@ -25,6 +27,7 @@ export class ObjectFactory {
     this.assertConcrete(definition);
     const object = new MetaObject(this.idGenerator(), definition, this.types, {
       isTypeAssignable: (actual, expected) => this.objects.isA(actual, expected),
+      behaviors: this.behaviors,
     });
     this.applyDefaults(object);
     for (const [name, value] of Object.entries(values)) object.set(name, value);
@@ -38,6 +41,7 @@ export class ObjectFactory {
       version: snapshot.version,
       state: "clean",
       isTypeAssignable: (actual, expected) => this.objects.isA(actual, expected),
+      behaviors: this.behaviors,
     });
     const values: Record<string, unknown> = {};
     for (const [name, storedValue] of Object.entries(snapshot.values)) {
