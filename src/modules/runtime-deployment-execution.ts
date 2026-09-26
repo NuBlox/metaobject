@@ -171,6 +171,9 @@ export class RuntimeDeploymentRunner {
     if (record.status === "completed" || record.status === "cancelled") {
       return { record, executedSteps };
     }
+    if (record.status === "failed") {
+      return { record, executedSteps, blockedReason: "step-failed" };
+    }
 
     if (record.status === "planned") {
       if (record.plan.requiresManualReview && !record.approvedAt) {
