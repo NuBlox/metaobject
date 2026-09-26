@@ -66,7 +66,7 @@ export type InferValues<D extends ObjectTypeDefinition> =
 
 type WritableAttributeKeys<D extends ObjectTypeDefinition> = {
   [K in keyof D["attributes"]]: D["attributes"][K] extends AttributeDefinition
-    ? D["attributes"][K]["computed"] extends { readonly resolver: string }
+    ? D["attributes"][K]["computed"] extends { readonly behavior: string }
       ? never
       : K
     : never;
