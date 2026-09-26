@@ -15,6 +15,9 @@ export class ObjectFactory {
     private readonly idGenerator: IdGenerator = () => crypto.randomUUID(),
   ) {}
 
+  /** Registry used to resolve runtime inheritance and assignability. */
+  get objectTypes(): ObjectTypeRegistry { return this.objects; }
+
   create<const D extends ObjectTypeDefinition>(definition: D, values: InferInputValues<D>): MetaObject<InferValues<D>>;
   create(objectTypeId: string, values?: Record<string, unknown>): MetaObject;
   create(

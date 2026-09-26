@@ -41,6 +41,7 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
   readonly objectType: ObjectTypeDefinition;
   #version: number;
   #state: ObjectState;
+  #mutationRevision = 0;
   readonly #values = new Map<string, unknown>();
   readonly #relationships = new Map<string, RelationshipValue>();
   readonly #changes = new Map<string, ChangeRecord>();
@@ -62,6 +63,8 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
 
   get version(): number { return this.#version; }
   get state(): ObjectState { return this.#state; }
+  /** Monotonic in-memory revision incremented whenever stored values/relationships mutate. */
+  get mutationRevision(): number { return this.#mutationRevision; }
 
   get<K extends keyof TValues & string>(attribute: K): TValues[K] | undefined;
   get(attribute: string): unknown;
@@ -285,6 +288,7 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
     }
     this.#changes.clear();
     this.#relationshipChanges.clear();
+    this.#mutationRevision += 1;
   }
 
   private assertMutable(): void {
@@ -294,6 +298,7 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
   }
 
   private markDirty(): void {
+    this.#mutationRevision += 1;
     if (this.#state === "clean") this.#state = "dirty";
   }
 
