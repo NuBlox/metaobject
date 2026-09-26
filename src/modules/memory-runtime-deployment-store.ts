@@ -1,5 +1,6 @@
 import { ConcurrencyError } from "../errors/errors.js";
 import {
+  assertRuntimeDeploymentJournalAppendOnly,
   validateRuntimeDeploymentJournal,
   type RuntimeDeploymentRecord,
   type RuntimeDeploymentRecordFilter,
@@ -38,6 +39,7 @@ export class MemoryRuntimeDeploymentStore implements RuntimeDeploymentStore {
           `Runtime deployment concurrency conflict for '${record.deploymentId}': expected revision ${expectedRevision}, found ${current.revision}.`,
         );
       }
+      assertRuntimeDeploymentJournalAppendOnly(current, record);
     } else if (expectedRevision !== undefined && expectedRevision !== 0) {
       throw new ConcurrencyError(
         `Runtime deployment '${record.deploymentId}' does not exist; expected revision ${expectedRevision} cannot be satisfied.`,
