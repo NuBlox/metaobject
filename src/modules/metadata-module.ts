@@ -138,8 +138,17 @@ export class MetadataModuleRegistry {
     const dependencies: ResolvedMetadataModuleDependency[] = [];
     const visited = new Set<string>();
     const visiting: string[] = [];
+    const selectedVersions = new Map<string, number>();
 
     const visit = (definition: MetadataModuleDefinition): void => {
+      const selected = selectedVersions.get(definition.id);
+      if (selected !== undefined && selected !== definition.version) {
+        throw new MetadataError(
+          `Metadata module version conflict for '${definition.id}': resolved both ${selected} and ${definition.version}.`,
+        );
+      }
+      selectedVersions.set(definition.id, definition.version);
+
       const key = moduleKey(definition.id, definition.version);
       if (visited.has(key)) return;
       const cycleStart = visiting.indexOf(key);
