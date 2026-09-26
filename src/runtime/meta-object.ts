@@ -1,10 +1,37 @@
 import { MetadataError } from "../errors/errors.js";
-import type { ObjectTypeDefinition } from "../metadata/definitions.js";
+import type { ObjectTypeDefinition, RelationshipDefinition } from "../metadata/definitions.js";
 import type { TypeRegistry } from "../types/type-registry.js";
-import type { ChangeRecord, ObjectReference, ObjectSnapshot, ObjectState } from "./model.js";
+import type {
+  ChangeRecord,
+  ObjectReference,
+  ObjectSnapshot,
+  ObjectState,
+  RelationshipChangeRecord,
+  RelationshipValue,
+} from "./model.js";
+import { sameObjectIdentity } from "./model.js";
 
 function copyReference(value: ObjectReference): ObjectReference {
   return { id: value.id, type: value.type };
+}
+
+function copyRelationship(value: RelationshipValue | undefined): RelationshipValue | undefined {
+  if (value === undefined) return undefined;
+  return Array.isArray(value)
+    ? value.map((item) => copyReference(item))
+    : copyReference(value as ObjectReference);
+}
+
+function relationshipValuesEqual(left: RelationshipValue | undefined, right: RelationshipValue | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  const leftRefs = Array.isArray(left) ? left : [left];
+  const rightRefs = Array.isArray(right) ? right : [right];
+  return leftRefs.length === rightRefs.length
+    && leftRefs.every((item, index) => sameObjectIdentity(item, rightRefs[index]!));
+}
+
+function isToMany(definition: RelationshipDefinition): boolean {
+  return definition.cardinality === "one-to-many" || definition.cardinality === "many-to-many";
 }
 
 export class MetaObject<TValues extends Record<string, unknown> = Record<string, unknown>> {
@@ -13,8 +40,9 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
   #version: number;
   #state: ObjectState;
   readonly #values = new Map<string, unknown>();
-  readonly #relationships = new Map<string, ObjectReference | readonly ObjectReference[]>();
+  readonly #relationships = new Map<string, RelationshipValue>();
   readonly #changes = new Map<string, ChangeRecord>();
+  readonly #relationshipChanges = new Map<string, RelationshipChangeRecord>();
 
   constructor(
     id: string,
@@ -38,9 +66,7 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
   set<K extends keyof TValues & string>(attribute: K, value: TValues[K]): this;
   set(attribute: string, value: unknown): this;
   set(attribute: string, value: unknown): this {
-    if (this.#state === "deleted" || this.#state === "detached") {
-      throw new MetadataError(`Cannot mutate object in '${this.#state}' state.`);
-    }
+    this.assertMutable();
     const definition = this.objectType.attributes[attribute];
     if (!definition) throw new MetadataError(`Unknown attribute '${this.objectType.id}.${attribute}'.`);
     if (definition.readOnly && this.#state !== "new") throw new MetadataError(`Attribute '${attribute}' is read-only.`);
@@ -50,13 +76,14 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
     if (!this.#changes.has(attribute)) this.#changes.set(attribute, { before, after: value });
     else this.#changes.set(attribute, { before: this.#changes.get(attribute)?.before, after: value });
     this.#values.set(attribute, value);
-    if (this.#state === "clean") this.#state = "dirty";
+    this.markDirty();
     return this;
   }
 
   unset(attribute: keyof TValues & string): this;
   unset(attribute: string): this;
   unset(attribute: string): this {
+    this.assertMutable();
     const definition = this.objectType.attributes[attribute];
     if (!definition) throw new MetadataError(`Unknown attribute '${this.objectType.id}.${attribute}'.`);
     if (!this.#values.has(attribute)) return this;
@@ -64,35 +91,133 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
     if (!this.#changes.has(attribute)) this.#changes.set(attribute, { before, after: undefined });
     else this.#changes.set(attribute, { before: this.#changes.get(attribute)?.before, after: undefined });
     this.#values.delete(attribute);
-    if (this.#state === "clean") this.#state = "dirty";
+    this.markDirty();
     return this;
   }
 
   has(attribute: string): boolean { return this.#values.has(attribute); }
 
+  /** Replace the complete relationship value. */
   setRelationship(name: string, value: ObjectReference | readonly ObjectReference[]): this {
-    const definition = this.objectType.relationships?.[name];
-    if (!definition) throw new MetadataError(`Unknown relationship '${this.objectType.id}.${name}'.`);
-    const many = definition.cardinality === "one-to-many" || definition.cardinality === "many-to-many";
+    this.assertMutable();
+    const definition = this.relationshipDefinition(name);
+    const many = isToMany(definition);
     const refs = Array.isArray(value) ? value : [value];
-    if (!many && refs.length > 1) throw new MetadataError(`Relationship '${name}' accepts at most one target.`);
-    for (const ref of refs) {
-      if (ref.type !== definition.target) {
-        throw new MetadataError(`Relationship '${name}' requires target type '${definition.target}', received '${ref.type}'.`);
-      }
+
+    if (!many && refs.length > 1) {
+      throw new MetadataError(`Relationship '${name}' accepts at most one target.`);
     }
-    this.#relationships.set(name, many ? refs.map(copyReference) : copyReference(refs[0]!));
-    if (this.#state === "clean") this.#state = "dirty";
+
+    if (refs.length === 0) return this.clearRelationship(name);
+
+    const normalized = this.normalizeReferences(name, definition, refs);
+    const next: RelationshipValue = many ? normalized : normalized[0]!;
+    this.writeRelationship(name, next);
     return this;
   }
 
-  getRelationship(name: string): ObjectReference | readonly ObjectReference[] | undefined {
-    return this.#relationships.get(name);
+  /** Add one target to a to-many relationship. */
+  addRelationship(name: string, target: ObjectReference, index?: number): this {
+    this.assertMutable();
+    const definition = this.relationshipDefinition(name);
+    if (!isToMany(definition)) {
+      throw new MetadataError(`Relationship '${name}' is not a to-many relationship.`);
+    }
+    this.assertReference(name, definition, target);
+
+    const current = this.relationshipReferences(name);
+    if (current.some((item) => sameObjectIdentity(item, target))) return this;
+
+    const next = current.map(copyReference);
+    const copied = copyReference(target);
+    if (index === undefined) {
+      next.push(copied);
+    } else {
+      if (!Number.isSafeInteger(index) || index < 0 || index > next.length) {
+        throw new MetadataError(`Relationship '${name}' insertion index '${index}' is out of range.`);
+      }
+      next.splice(index, 0, copied);
+    }
+    this.writeRelationship(name, next);
+    return this;
   }
 
-  changedAttributes(): Readonly<Record<string, ChangeRecord>> { return Object.fromEntries(this.#changes); }
+  /** Remove a target from a relationship without mutating the target object. */
+  removeRelationship(name: string, target?: ObjectReference): this {
+    this.assertMutable();
+    const definition = this.relationshipDefinition(name);
+    const current = this.#relationships.get(name);
+    if (current === undefined) return this;
+
+    if (!isToMany(definition)) {
+      const currentRef = current as ObjectReference;
+      if (target && !sameObjectIdentity(currentRef, target)) return this;
+      this.writeRelationship(name, undefined);
+      return this;
+    }
+
+    if (!target) {
+      throw new MetadataError(`Removing from to-many relationship '${name}' requires a target. Use clearRelationship() to remove all targets.`);
+    }
+    const refs = current as readonly ObjectReference[];
+    const next = refs.filter((item) => !sameObjectIdentity(item, target));
+    if (next.length === refs.length) return this;
+    this.writeRelationship(name, next.length > 0 ? next : undefined);
+    return this;
+  }
+
+  clearRelationship(name: string): this {
+    this.assertMutable();
+    this.relationshipDefinition(name);
+    if (!this.#relationships.has(name)) return this;
+    this.writeRelationship(name, undefined);
+    return this;
+  }
+
+  getRelationship(name: string): RelationshipValue | undefined {
+    return copyRelationship(this.#relationships.get(name));
+  }
+
+  relationshipReferences(name: string): readonly ObjectReference[] {
+    const value = this.#relationships.get(name);
+    if (value === undefined) return [];
+    return (Array.isArray(value) ? value : [value]).map((item) => copyReference(item));
+  }
+
+  relationshipCount(name: string): number {
+    return this.relationshipReferences(name).length;
+  }
+
+  hasRelationship(name: string, target?: ObjectReference): boolean {
+    const refs = this.relationshipReferences(name);
+    return target === undefined
+      ? refs.length > 0
+      : refs.some((item) => sameObjectIdentity(item, target));
+  }
+
+  changedAttributes(): Readonly<Record<string, ChangeRecord>> {
+    return Object.fromEntries(this.#changes);
+  }
+
+  changedRelationships(): Readonly<Record<string, RelationshipChangeRecord>> {
+    return Object.fromEntries(
+      [...this.#relationshipChanges.entries()].map(([name, change]) => [
+        name,
+        {
+          before: copyRelationship(change.before),
+          after: copyRelationship(change.after),
+        },
+      ]),
+    );
+  }
+
   values(): Readonly<Record<string, unknown>> { return Object.fromEntries(this.#values); }
-  relationships(): Readonly<Record<string, ObjectReference | readonly ObjectReference[]>> { return Object.fromEntries(this.#relationships); }
+
+  relationships(): Readonly<Record<string, RelationshipValue>> {
+    return Object.fromEntries(
+      [...this.#relationships.entries()].map(([name, value]) => [name, copyRelationship(value)!]),
+    );
+  }
 
   toJSON(): Record<string, unknown> {
     const serialized: Record<string, unknown> = {
@@ -112,7 +237,7 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
         ? value.map((item) => type.serialize(item))
         : type.serialize(value);
     }
-    for (const [name, value] of this.#relationships) serialized[name] = value;
+    for (const [name, value] of this.#relationships) serialized[name] = copyRelationship(value);
     return serialized;
   }
 
@@ -130,18 +255,81 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
   markPersisted(version: number): void {
     this.#version = version;
     this.#changes.clear();
+    this.#relationshipChanges.clear();
     this.#state = "clean";
   }
 
   markDeleted(): void { this.#state = "deleted"; }
   markDetached(): void { this.#state = "detached"; }
 
-  load(values: Readonly<Record<string, unknown>>, relationships: Readonly<Record<string, ObjectReference | readonly ObjectReference[]>>): void {
+  load(values: Readonly<Record<string, unknown>>, relationships: Readonly<Record<string, RelationshipValue>>): void {
     this.#values.clear();
     this.#relationships.clear();
     for (const [name, value] of Object.entries(values)) this.#values.set(name, value);
-    for (const [name, value] of Object.entries(relationships)) this.#relationships.set(name, value);
+    for (const [name, value] of Object.entries(relationships)) {
+      const copied = copyRelationship(value);
+      if (copied !== undefined) this.#relationships.set(name, copied);
+    }
     this.#changes.clear();
+    this.#relationshipChanges.clear();
+  }
+
+  private assertMutable(): void {
+    if (this.#state === "deleted" || this.#state === "detached") {
+      throw new MetadataError(`Cannot mutate object in '${this.#state}' state.`);
+    }
+  }
+
+  private markDirty(): void {
+    if (this.#state === "clean") this.#state = "dirty";
+  }
+
+  private relationshipDefinition(name: string): RelationshipDefinition {
+    const definition = this.objectType.relationships?.[name];
+    if (!definition) throw new MetadataError(`Unknown relationship '${this.objectType.id}.${name}'.`);
+    return definition;
+  }
+
+  private normalizeReferences(
+    name: string,
+    definition: RelationshipDefinition,
+    refs: readonly ObjectReference[],
+  ): ObjectReference[] {
+    const normalized: ObjectReference[] = [];
+    for (const ref of refs) {
+      this.assertReference(name, definition, ref);
+      if (!normalized.some((item) => sameObjectIdentity(item, ref))) normalized.push(copyReference(ref));
+    }
+    return normalized;
+  }
+
+  private assertReference(name: string, definition: RelationshipDefinition, ref: ObjectReference): void {
+    if (!ref.id || !ref.type) throw new MetadataError(`Relationship '${name}' requires a target id and type.`);
+    if (ref.type !== definition.target) {
+      throw new MetadataError(`Relationship '${name}' requires target type '${definition.target}', received '${ref.type}'.`);
+    }
+  }
+
+  private writeRelationship(name: string, value: RelationshipValue | undefined): void {
+    const before = this.#relationships.get(name);
+    if (relationshipValuesEqual(before, value)) return;
+
+    const existingChange = this.#relationshipChanges.get(name);
+    const original = existingChange?.before ?? copyRelationship(before);
+    const next = copyRelationship(value);
+
+    if (next === undefined) this.#relationships.delete(name);
+    else this.#relationships.set(name, next);
+
+    if (relationshipValuesEqual(original, next)) {
+      this.#relationshipChanges.delete(name);
+    } else {
+      this.#relationshipChanges.set(name, {
+        before: copyRelationship(original),
+        after: copyRelationship(next),
+      });
+    }
+    this.markDirty();
   }
 
   private assertValue(typeName: string, multiple: boolean, nullable: boolean, value: unknown, attribute: string): void {
