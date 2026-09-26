@@ -64,8 +64,19 @@ function validateResult(policyId: string, result: RuntimeDeploymentPolicyResult)
   if (result.message !== undefined && !result.message.trim()) {
     throw new MetadataError(`Runtime deployment policy '${policyId}' returned an empty message.`);
   }
-  if (result.evidence?.externalReference !== undefined && !result.evidence.externalReference.trim()) {
-    throw new MetadataError(`Runtime deployment policy '${policyId}' returned an empty externalReference.`);
+
+  const evidence = result.evidence as RuntimeDeploymentPolicyEvidence | null | undefined;
+  if (evidence !== undefined) {
+    if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) {
+      throw new MetadataError(`Runtime deployment policy '${policyId}' evidence must be an object.`);
+    }
+    if (evidence.externalReference !== undefined && !evidence.externalReference.trim()) {
+      throw new MetadataError(`Runtime deployment policy '${policyId}' returned an empty externalReference.`);
+    }
+    const details = evidence.details as Readonly<Record<string, unknown>> | null | undefined;
+    if (details !== undefined && (details === null || typeof details !== "object" || Array.isArray(details))) {
+      throw new MetadataError(`Runtime deployment policy '${policyId}' evidence details must be an object.`);
+    }
   }
 }
 
@@ -101,7 +112,7 @@ export class RuntimeDeploymentPolicyRegistry {
       try {
         const result = await policy.evaluate({ deployment: structuredClone(deployment) });
         validateResult(policy.id, result);
-        evaluations.push({ policyId: policy.id, ...structuredClone(result) });
+        evaluations.push({ ...structuredClone(result), policyId: policy.id });
       } catch (error) {
         evaluations.push({
           policyId: policy.id,
