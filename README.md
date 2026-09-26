@@ -2,7 +2,7 @@
 
 A standalone, application-agnostic metadata-driven object model and runtime for TypeScript.
 
-`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, reproducible code generation, schema evolution planning, governed metadata releases and versioned metadata modules. It has no dependency on NuBlox application products or on any database engine.
+`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, reproducible code generation, schema evolution planning, governed metadata releases and persistent versioned metadata modules. It has no dependency on NuBlox application products or on any database engine.
 
 ## Design principles
 
@@ -17,7 +17,8 @@ A standalone, application-agnostic metadata-driven object model and runtime for 
 - **Schema evolution is semantic.** Version changes are classified by compatibility and translated into portable migration plans.
 - **Releases are gated.** Breaking changes, blocking migrations and optimistic draft revisions are enforced before publication.
 - **Modules make dependencies explicit.** Capability-level metadata releases declare exact object versions and version-ranged module dependencies.
-- **Optimistic concurrency is explicit.** Runtime objects and metadata drafts use version/revision checks.
+- **Released module graphs are durable.** Published modules persist the exact dependency versions actually used by a release.
+- **Optimistic concurrency is explicit.** Runtime objects, metadata drafts and module drafts use version/revision checks.
 
 ## Quick start
 
@@ -70,19 +71,15 @@ M2 adds single inheritance, abstract/sealed types, lineage, subtype-compatible r
 
 ## Constraints and behaviours
 
-M3 adds custom constraints, cross-field rules, severity-aware validation, computed attributes, operations, hooks, declared domain events and inherited behaviour metadata. Executable code stays in runtime registries while metadata remains serializable. See `docs/constraints-behaviors.md`.
+M3 adds custom constraints, cross-field rules, severity-aware validation, computed attributes, operations, hooks, declared domain events and inherited behaviour metadata. See `docs/constraints-behaviors.md`.
 
 ## Query engine
 
-M4 adds `MetaQuery`, `QueryPlanner` and `QueryEngine` while retaining the original flat `ObjectQuery` storage contract.
-
-Supported capabilities include recursive `and` / `or` / `not`, metadata-validated relationship paths, projections, aliases, aggregates, stable cursor pagination, explicit null ordering and subtype expansion. See `docs/query-engine.md`.
+M4 adds `MetaQuery`, `QueryPlanner` and `QueryEngine` while retaining the original flat `ObjectQuery` storage contract. Supported capabilities include recursive logical groups, relationship paths, projections, aliases, aggregates, stable cursor pagination, explicit null ordering and subtype expansion. See `docs/query-engine.md`.
 
 ## Metadata persistence
 
-M6 provides a database-neutral normalized catalogue with `draft`, `published` and `deprecated` lifecycle states, optimistic revisions, batch publication of mutually-dependent schemas, portable bundle import/export and reconstruction of runtime registries.
-
-`normalizeObjectType()` flattens definitions into row collections suitable for `meta_object_type`, `meta_attribute`, constraints, relationships, indexes, rules, operations, events and hooks. See `docs/metadata-persistence.md`.
+M6 provides a database-neutral normalized catalogue with `draft`, `published` and `deprecated` lifecycle states, optimistic revisions, batch publication, portable bundle import/export and runtime-registry reconstruction. See `docs/metadata-persistence.md`.
 
 ## Code generation
 
@@ -90,7 +87,7 @@ M7 provides reproducible TypeScript interfaces/create-inputs/classes, dependency
 
 ## Schema evolution
 
-M8 compares versions semantically and classifies changes as `compatible`, `requires-migration`, or `breaking`. `MigrationPlanner` emits portable validation, backfill, transformation, index, cleanup and manual-review steps, with adapter hooks for physical work. See `docs/schema-evolution.md`.
+M8 compares versions semantically and classifies changes as `compatible`, `requires-migration`, or `breaking`. `MigrationPlanner` emits portable validation, backfill, transformation, index, cleanup and manual-review steps. See `docs/schema-evolution.md`.
 
 ## Metadata release pipeline
 
@@ -98,30 +95,35 @@ M9 coordinates metadata persistence, evolution and generation into governed sing
 
 ## Metadata modules
 
-M10 groups exact object-type versions into versioned capability modules with explicit dependency ranges.
+M10 groups exact object-type versions into versioned capability modules with explicit dependency ranges. The registry resolves highest-compatible dependency versions, rejects cycles and diamond version conflicts, validates object-type ownership and releases module members through the M9 batch pipeline. See `docs/metadata-modules.md`.
+
+## Persistent module catalogue
+
+M11 makes module definitions and released dependency locks durable.
 
 ```ts
-const modules = new MetadataModuleRegistry();
+const moduleCatalog = new MetadataModuleCatalog(
+  new MemoryMetadataModuleStore(),
+);
 
-modules.register(defineMetadataModule({
-  id: "identity",
-  name: "Identity",
-  version: 2,
-  members: [{ objectTypeId: "nublox.person", version: 4 }],
-}));
-
-modules.register(defineMetadataModule({
-  id: "assets",
-  name: "Assets",
-  version: 1,
-  dependencies: [{ moduleId: "identity", minimumVersion: 2 }],
-  members: [{ objectTypeId: "nublox.asset", version: 5 }],
-}));
+const draft = await moduleCatalog.saveDraft(moduleDefinition);
+const modules = await moduleCatalog.createPublishedRegistry();
 ```
 
-The module registry resolves highest-compatible dependency versions, rejects dependency cycles and diamond version conflicts, and returns dependency-first order. Module releases require dependency modules to be published, enforce one owning module per object type in the resolved graph, validate inheritance/relationship dependency ownership, and release all root-module schemas through the M9 batch pipeline.
+The catalogue provides:
 
-See `docs/metadata-modules.md`.
+- pluggable `MetadataModuleStore`
+- optimistic draft revisions
+- `draft` / `published` / `deprecated` lifecycle
+- version progression checks
+- released-manifest verification
+- dependency-safe deprecation
+- reconstruction of every published module version for correct range resolution
+- portable `nublox-metaobject-modules` bundles
+- full prevalidation of published bundle manifests before any import writes
+- historical dependency locks that remain valid after newer compatible modules are published
+
+See `docs/module-catalog.md`.
 
 ## Storage model
 
@@ -137,7 +139,7 @@ Database-specific adapters remain separate packages:
 
 ## Implemented scope
 
-The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime objects; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; governed publication; portable metadata bundles; TypeScript/validator/JSON Schema generation; semantic schema evolution; portable migration planning; single/batch release coordination; and versioned metadata modules with dependency resolution and module-wide releases.
+The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime objects; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; governed publication; portable metadata bundles; TypeScript/validator/JSON Schema generation; semantic schema evolution; portable migration planning; single/batch release coordination; versioned metadata modules; dependency resolution; module-wide releases; and a durable module catalogue with locked historical manifests.
 
 ## Roadmap
 
@@ -170,6 +172,9 @@ Implemented: single and batch release preparation, migration execution gates, ex
 
 ### M10 — Metadata modules ✅
 Implemented: versioned module definitions, dependency ranges, deterministic dependency resolution, cycle/version-conflict detection, explicit object-type ownership, module manifests and module-wide governed releases.
+
+### M11 — Persistent module catalogue ✅
+Implemented: pluggable module storage, optimistic module revisions, lifecycle management, locked release manifests, dependency-safe deprecation, registry reconstruction and validated portable module bundles.
 
 ## Development
 
