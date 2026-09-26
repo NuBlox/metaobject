@@ -51,6 +51,7 @@ export interface RuntimeDeploymentDriftBaseline {
   readonly attestationId: string;
   readonly deploymentId: string;
   readonly deploymentRevision: number;
+  readonly deploymentCreatedAt?: string;
   readonly profileId: string;
   readonly profileVersion: number;
   readonly fingerprints: readonly RuntimeDeploymentDriftBaselineFingerprint[];
@@ -76,6 +77,7 @@ export interface RuntimeDeploymentDriftAssessment {
   readonly baselineId: string;
   readonly deploymentId: string;
   readonly deploymentRevision: number;
+  readonly deploymentCreatedAt?: string;
   readonly outcome: RuntimeDeploymentDriftOutcome;
   readonly checks: readonly RuntimeDeploymentDriftCheck[];
   readonly createdAt: string;
@@ -93,6 +95,19 @@ export interface RuntimeDeploymentDriftAssessmentStore {
 }
 
 const clone = <T>(value: T): T => structuredClone(value);
+
+function sameDeploymentSnapshot(left: RuntimeDeploymentRecord, right: RuntimeDeploymentRecord): boolean {
+  return left.revision === right.revision
+    && left.createdAt === right.createdAt
+    && left.profileId === right.profileId
+    && left.fromProfileVersion === right.fromProfileVersion
+    && left.toProfileVersion === right.toProfileVersion
+    && (left.journal?.at(-1)?.sequence ?? 0) === (right.journal?.at(-1)?.sequence ?? 0)
+    && left.plan.profileId === right.plan.profileId
+    && left.plan.fromProfileVersion === right.plan.fromProfileVersion
+    && left.plan.toProfileVersion === right.plan.toProfileVersion
+    && left.plan.steps.length === right.plan.steps.length;
+}
 
 export class MemoryRuntimeDeploymentDriftBaselineStore implements RuntimeDeploymentDriftBaselineStore {
   readonly #records = new Map<string, RuntimeDeploymentDriftBaseline>();
@@ -159,7 +174,10 @@ export class RuntimeDeploymentDriftCatalog {
     if (!attestation) throw new MetadataError(`Unknown runtime deployment attestation '${attestationId}'.`);
     if (attestation.outcome === "fail") throw new MetadataError(`Failed attestation '${attestationId}' cannot establish a drift baseline.`);
     const deployment = await this.requireCompletedDeployment(attestation.deploymentId);
-    if (deployment.revision !== attestation.deploymentRevision) {
+    if (
+      deployment.revision !== attestation.deploymentRevision
+      || (attestation.deploymentCreatedAt !== undefined && deployment.createdAt !== attestation.deploymentCreatedAt)
+    ) {
       throw new ConcurrencyError(`Runtime deployment '${deployment.deploymentId}' changed after attestation '${attestationId}'.`);
     }
     const registered = this.probes.list();
@@ -171,6 +189,12 @@ export class RuntimeDeploymentDriftCatalog {
       assertProbeResult(probe.id, result);
       fingerprints.push({ probeId: probe.id, ...clone(result) });
     }
+
+    const current = await this.deployments.get(deployment.deploymentId);
+    if (!current || !sameDeploymentSnapshot(current, deployment)) {
+      throw new ConcurrencyError(`Runtime deployment '${deployment.deploymentId}' changed during drift baseline inspection.`);
+    }
+
     const baseline: RuntimeDeploymentDriftBaseline = {
       format: "nublox-metaobject-runtime-drift-baseline",
       formatVersion: 1,
@@ -178,6 +202,7 @@ export class RuntimeDeploymentDriftCatalog {
       attestationId,
       deploymentId: deployment.deploymentId,
       deploymentRevision: deployment.revision,
+      deploymentCreatedAt: deployment.createdAt,
       profileId: deployment.profileId,
       profileVersion: deployment.toProfileVersion,
       fingerprints,
@@ -196,12 +221,15 @@ export class RuntimeDeploymentDriftCatalog {
     const currentById = new Map(this.probes.list().map((probe) => [probe.id, probe]));
     const checks: RuntimeDeploymentDriftCheck[] = [];
 
-    if (deployment.revision !== baseline.deploymentRevision) {
+    if (
+      deployment.revision !== baseline.deploymentRevision
+      || (baseline.deploymentCreatedAt !== undefined && deployment.createdAt !== baseline.deploymentCreatedAt)
+    ) {
       checks.push({
         probeId: "$deployment-revision",
         status: "changed",
-        baselineFingerprint: String(baseline.deploymentRevision),
-        currentFingerprint: String(deployment.revision),
+        baselineFingerprint: `${baseline.deploymentCreatedAt ?? "legacy"}:${baseline.deploymentRevision}`,
+        currentFingerprint: `${deployment.createdAt}:${deployment.revision}`,
         message: "The persisted completed deployment record changed after the baseline was established.",
       });
     }
@@ -229,6 +257,11 @@ export class RuntimeDeploymentDriftCatalog {
       }
     }
 
+    const current = await this.deployments.get(deployment.deploymentId);
+    if (!current || !sameDeploymentSnapshot(current, deployment)) {
+      throw new ConcurrencyError(`Runtime deployment '${deployment.deploymentId}' changed during drift assessment.`);
+    }
+
     const assessment: RuntimeDeploymentDriftAssessment = {
       format: "nublox-metaobject-runtime-drift-assessment",
       formatVersion: 1,
@@ -236,6 +269,7 @@ export class RuntimeDeploymentDriftCatalog {
       baselineId,
       deploymentId: deployment.deploymentId,
       deploymentRevision: deployment.revision,
+      deploymentCreatedAt: deployment.createdAt,
       outcome: assessmentOutcome(checks),
       checks,
       createdAt: this.clock().toISOString(),
@@ -256,6 +290,7 @@ export class RuntimeDeploymentDriftCatalog {
 export function validateRuntimeDeploymentDriftBaseline(record: RuntimeDeploymentDriftBaseline): void {
   if (record.format !== "nublox-metaobject-runtime-drift-baseline" || record.formatVersion !== 1) throw new MetadataError("Unsupported runtime drift baseline format.");
   if (!record.baselineId.trim() || !record.attestationId.trim() || !record.deploymentId.trim() || !record.profileId.trim()) throw new MetadataError("Runtime drift baseline identity fields are required.");
+  if (record.deploymentCreatedAt !== undefined && !record.deploymentCreatedAt.trim()) throw new MetadataError("Runtime drift baseline deploymentCreatedAt cannot be empty.");
   if (record.fingerprints.length === 0) throw new MetadataError("Runtime drift baseline requires at least one fingerprint.");
   const ids = new Set<string>();
   for (const fingerprint of record.fingerprints) {
@@ -268,6 +303,8 @@ export function validateRuntimeDeploymentDriftBaseline(record: RuntimeDeployment
 export function validateRuntimeDeploymentDriftAssessment(record: RuntimeDeploymentDriftAssessment): void {
   if (record.format !== "nublox-metaobject-runtime-drift-assessment" || record.formatVersion !== 1) throw new MetadataError("Unsupported runtime drift assessment format.");
   if (!record.assessmentId.trim() || !record.baselineId.trim() || !record.deploymentId.trim()) throw new MetadataError("Runtime drift assessment identity fields are required.");
+  if (record.deploymentCreatedAt !== undefined && !record.deploymentCreatedAt.trim()) throw new MetadataError("Runtime drift assessment deploymentCreatedAt cannot be empty.");
+  if (record.checks.length === 0) throw new MetadataError("Runtime drift assessment requires at least one check.");
   if (assessmentOutcome(record.checks) !== record.outcome) throw new MetadataError("Runtime drift assessment outcome does not match its checks.");
   if (!record.createdAt.trim()) throw new MetadataError("Runtime drift assessment createdAt is required.");
 }

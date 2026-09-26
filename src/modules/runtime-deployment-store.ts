@@ -108,6 +108,26 @@ export function appendRuntimeDeploymentJournal(
   ];
 }
 
+function validateEvidence(deploymentId: string, sequence: number, evidence: unknown): void {
+  if (evidence === undefined) return;
+  if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) {
+    throw new MetadataError(`Runtime deployment '${deploymentId}' journal entry ${sequence} evidence must be an object.`);
+  }
+  const candidate = evidence as Partial<RuntimeDeploymentStepEvidence>;
+  if (typeof candidate.recordedAt !== "string" || !candidate.recordedAt.trim()) {
+    throw new MetadataError(`Runtime deployment '${deploymentId}' journal entry ${sequence} evidence is missing recordedAt.`);
+  }
+  if (candidate.externalReference !== undefined && (typeof candidate.externalReference !== "string" || !candidate.externalReference.trim())) {
+    throw new MetadataError(`Runtime deployment '${deploymentId}' journal entry ${sequence} evidence has an invalid externalReference.`);
+  }
+  if (
+    candidate.details !== undefined
+    && (candidate.details === null || typeof candidate.details !== "object" || Array.isArray(candidate.details))
+  ) {
+    throw new MetadataError(`Runtime deployment '${deploymentId}' journal entry ${sequence} evidence details must be an object.`);
+  }
+}
+
 /** Validate sequence/order and basic event integrity before persistence/import. */
 export function validateRuntimeDeploymentJournal(record: Pick<RuntimeDeploymentRecord, "deploymentId" | "journal">): void {
   const journal = record.journal;
@@ -141,12 +161,13 @@ export function validateRuntimeDeploymentJournal(record: Pick<RuntimeDeploymentR
     if (entry.message !== undefined && !entry.message.trim()) {
       throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} has an empty message.`);
     }
+    validateEvidence(record.deploymentId, entry.sequence, entry.evidence);
     if (entry.kind === "deployment-policy-evaluated") {
       if (!entry.policyId?.trim()) {
         throw new MetadataError(`Runtime deployment '${record.deploymentId}' policy journal entry ${entry.sequence} is missing policyId.`);
       }
-      if (entry.policyOutcome === undefined) {
-        throw new MetadataError(`Runtime deployment '${record.deploymentId}' policy journal entry ${entry.sequence} is missing policyOutcome.`);
+      if (entry.policyOutcome !== "allow" && entry.policyOutcome !== "warn" && entry.policyOutcome !== "deny") {
+        throw new MetadataError(`Runtime deployment '${record.deploymentId}' policy journal entry ${entry.sequence} has an invalid policyOutcome.`);
       }
       if (entry.policyOutcome !== "allow" && !entry.message?.trim()) {
         throw new MetadataError(

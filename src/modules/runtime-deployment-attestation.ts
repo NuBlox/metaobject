@@ -28,6 +28,8 @@ export interface RuntimeDeploymentAttestation {
   readonly attestationId: string;
   readonly deploymentId: string;
   readonly deploymentRevision: number;
+  /** Immutable creation timestamp of the deployment snapshot when known. */
+  readonly deploymentCreatedAt?: string;
   readonly profileId: string;
   readonly fromProfileVersion: number;
   readonly toProfileVersion: number;
@@ -51,6 +53,19 @@ export interface RuntimeDeploymentAttestationStore {
 }
 
 function clone<T>(value: T): T { return structuredClone(value); }
+
+function sameDeploymentSnapshot(left: RuntimeDeploymentRecord, right: RuntimeDeploymentRecord): boolean {
+  return left.revision === right.revision
+    && left.createdAt === right.createdAt
+    && left.profileId === right.profileId
+    && left.fromProfileVersion === right.fromProfileVersion
+    && left.toProfileVersion === right.toProfileVersion
+    && (left.journal?.at(-1)?.sequence ?? 0) === (right.journal?.at(-1)?.sequence ?? 0)
+    && left.plan.profileId === right.plan.profileId
+    && left.plan.fromProfileVersion === right.plan.fromProfileVersion
+    && left.plan.toProfileVersion === right.plan.toProfileVersion
+    && left.plan.steps.length === right.plan.steps.length;
+}
 
 export class MemoryRuntimeDeploymentAttestationStore implements RuntimeDeploymentAttestationStore {
   readonly #records = new Map<string, RuntimeDeploymentAttestation>();
@@ -101,8 +116,20 @@ function validateResult(verifierId: string, result: RuntimeDeploymentVerificatio
   if (result.outcome !== "pass" && !result.message?.trim()) {
     throw new MetadataError(`Runtime deployment verifier '${verifierId}' ${result.outcome} result requires a message.`);
   }
-  if (result.evidence && !result.evidence.recordedAt.trim()) {
-    throw new MetadataError(`Runtime deployment verifier '${verifierId}' evidence recordedAt is required.`);
+  const evidence = result.evidence as RuntimeDeploymentStepEvidence | null | undefined;
+  if (evidence !== undefined) {
+    if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) {
+      throw new MetadataError(`Runtime deployment verifier '${verifierId}' evidence must be an object.`);
+    }
+    if (!evidence.recordedAt.trim()) {
+      throw new MetadataError(`Runtime deployment verifier '${verifierId}' evidence recordedAt is required.`);
+    }
+    if (evidence.externalReference !== undefined && !evidence.externalReference.trim()) {
+      throw new MetadataError(`Runtime deployment verifier '${verifierId}' evidence externalReference cannot be empty.`);
+    }
+    if (evidence.details !== undefined && (!evidence.details || typeof evidence.details !== "object" || Array.isArray(evidence.details))) {
+      throw new MetadataError(`Runtime deployment verifier '${verifierId}' evidence details must be an object.`);
+    }
   }
 }
 
@@ -140,16 +167,16 @@ export class RuntimeDeploymentAttestationCatalog {
       try {
         const result = await verifier.verify({ deployment: clone(deployment) });
         validateResult(verifier.id, result);
-        checks.push({ verifierId: verifier.id, ...clone(result) });
+        checks.push({ ...clone(result), verifierId: verifier.id });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         checks.push({ verifierId: verifier.id, outcome: "fail", message: `Verifier failed closed: ${message}` });
       }
     }
 
-    // Detect concurrent deployment mutation between verification and attestation creation.
+    // Detect mutation or delete/recreate races between verification and attestation creation.
     const current = await this.deployments.get(deploymentId);
-    if (!current || current.revision !== deployment.revision) {
+    if (!current || !sameDeploymentSnapshot(current, deployment)) {
       throw new ConcurrencyError(`Runtime deployment '${deploymentId}' changed during attestation verification.`);
     }
 
@@ -159,6 +186,7 @@ export class RuntimeDeploymentAttestationCatalog {
       attestationId,
       deploymentId,
       deploymentRevision: deployment.revision,
+      deploymentCreatedAt: deployment.createdAt,
       profileId: deployment.profileId,
       fromProfileVersion: deployment.fromProfileVersion,
       toProfileVersion: deployment.toProfileVersion,
@@ -186,12 +214,18 @@ export function validateRuntimeDeploymentAttestation(attestation: RuntimeDeploym
   if (!attestation.attestationId.trim() || !attestation.deploymentId.trim() || !attestation.profileId.trim()) {
     throw new MetadataError("Runtime deployment attestation identity fields are required.");
   }
+  if (attestation.deploymentCreatedAt !== undefined && !attestation.deploymentCreatedAt.trim()) {
+    throw new MetadataError("Runtime deployment attestation deploymentCreatedAt cannot be empty.");
+  }
   if (!Number.isSafeInteger(attestation.deploymentRevision) || attestation.deploymentRevision < 1) {
     throw new MetadataError("Runtime deployment attestation deploymentRevision must be a positive integer.");
   }
   if (attestation.checks.length === 0) throw new MetadataError("Runtime deployment attestation requires at least one verifier check.");
+  const verifierIds = new Set<string>();
   for (const check of attestation.checks) {
     if (!check.verifierId.trim()) throw new MetadataError("Runtime deployment attestation verifierId is required.");
+    if (verifierIds.has(check.verifierId)) throw new MetadataError(`Duplicate runtime deployment attestation verifier '${check.verifierId}'.`);
+    verifierIds.add(check.verifierId);
     validateResult(check.verifierId, check);
   }
   if (overall(attestation.checks) !== attestation.outcome) {
