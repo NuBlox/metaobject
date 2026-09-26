@@ -2,7 +2,7 @@
 
 A standalone, application-agnostic metadata-driven object model and runtime for TypeScript.
 
-`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, persistence contracts and reproducible code generation. It has no dependency on NuBlox application products or on any database engine.
+`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, reproducible code generation and schema evolution planning. It has no dependency on NuBlox application products or on any database engine.
 
 ## Design principles
 
@@ -14,6 +14,7 @@ A standalone, application-agnostic metadata-driven object model and runtime for 
 - **Queries are database-neutral.** Rich query planning sits above storage and can later be pushed down by adapters.
 - **Metadata persistence is normalized.** Definitions flatten into database-ready metadata records.
 - **Generated artifacts are reproducible.** TypeScript, validators, JSON Schema and adapter artifacts are regenerated from metadata rather than becoming a second source of truth.
+- **Schema evolution is semantic.** Version changes are classified by compatibility and translated into portable migration plans.
 - **Optimistic concurrency is explicit.** Runtime objects and metadata drafts use version/revision checks.
 
 ## Quick start
@@ -98,7 +99,7 @@ See `docs/metadata-persistence.md`.
 
 ## Code generation
 
-M7 expands code generation from a minimal interface emitter into a reproducible artifact system.
+M7 expands code generation into a reproducible artifact system.
 
 ```ts
 const generators = createDefaultArtifactGeneratorRegistry();
@@ -108,18 +109,26 @@ const artifacts = generators.generateMany(
 );
 ```
 
-First-party generation includes:
+First-party generation includes TypeScript interfaces/create-inputs/classes, dependency-free validators, JSON Schema draft 2020-12 and normalized metadata snapshots. `ArtifactGeneratorRegistry` is also the extension point for database-specific packages such as a future MySQL adapter. See `docs/code-generation.md`.
 
-- TypeScript value interfaces
-- create-input interfaces that omit computed attributes by default
-- immutable typed model wrappers
-- dependency-free TypeScript validators
-- JSON Schema draft 2020-12
-- normalized metadata snapshot artifacts
+## Schema evolution
 
-`ArtifactGeneratorRegistry` is also the extension point for database-specific packages. A future `@nublox/metaobject-storage-mysql` package can register MySQL DDL and mapping generators without adding a MySQL dependency to core.
+M8 compares versions semantically rather than textually.
 
-See `docs/code-generation.md`.
+```ts
+const diff = diffObjectTypes(assetV1, assetV2);
+const plan = new MigrationPlanner().plan(diff);
+```
+
+Changes are classified as:
+
+- `compatible`
+- `requires-migration`
+- `breaking`
+
+The migration planner emits ordered, database-neutral steps for metadata application, validation, backfill, data transformation, index rebuilds, cleanup and manual review. Adapter packages can register supplemental steps for dialect-specific work such as MySQL DDL.
+
+`MetadataEvolution` connects the same diff/planning engine directly to persisted `MetadataCatalog` versions. See `docs/schema-evolution.md`.
 
 ## Storage model
 
@@ -135,7 +144,7 @@ Database-specific adapters remain separate packages:
 
 ## Implemented scope
 
-The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime object creation; defaults/nullability; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; lifecycle-managed metadata publication; portable metadata bundles; TypeScript interfaces/create-inputs/classes; generated validators; JSON Schema; and an extensible artifact generator registry.
+The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime object creation; defaults/nullability; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; lifecycle-managed metadata publication; portable metadata bundles; TypeScript interfaces/create-inputs/classes; generated validators; JSON Schema; an extensible artifact generator registry; semantic schema diffs; compatibility classification; and portable migration planning.
 
 ## Roadmap
 
@@ -167,9 +176,9 @@ Implemented: normalized metadata rows, versioned store contract, optimistic cata
 
 Implemented: TypeScript interfaces/create-inputs/classes, generated validators, JSON Schema, metadata artifacts and an adapter-extensible artifact generator registry.
 
-### M8 — Schema evolution
+### M8 — Schema evolution ✅
 
-Calculate metadata differences, classify compatibility and provide migration planning hooks.
+Implemented: semantic version diffs, compatibility classification, catalogue-backed comparisons, portable migration plans and adapter/application migration hooks.
 
 ## Development
 
