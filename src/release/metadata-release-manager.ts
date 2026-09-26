@@ -19,14 +19,24 @@ export interface MigrationExecutor {
   execute(step: MigrationStep, context: MigrationExecutionContext): Promise<void>;
 }
 
-export interface MetadataReleasePreparation {
+export interface MetadataReleaseRequest {
   readonly objectTypeId: string;
   readonly targetVersion: number;
+}
+
+export interface MetadataReleasePreparation extends MetadataReleaseRequest {
   readonly targetRevision: number;
   readonly previousPublishedVersion?: number;
   readonly diff?: SchemaDiff;
   readonly migrationPlan?: MigrationPlan;
   readonly artifacts: readonly GeneratedArtifact[];
+}
+
+export interface MetadataBatchReleasePreparation {
+  readonly releases: readonly MetadataReleasePreparation[];
+  readonly artifacts: readonly GeneratedArtifact[];
+  readonly requiresManualReview: boolean;
+  readonly blockingMigrationSteps: number;
 }
 
 export interface MetadataReleaseOptions {
@@ -40,6 +50,10 @@ export interface MetadataReleaseOptions {
 
 export interface MetadataReleaseResult extends MetadataReleasePreparation {
   readonly published: MetadataRecord;
+}
+
+export interface MetadataBatchReleaseResult extends MetadataBatchReleasePreparation {
+  readonly published: readonly MetadataRecord[];
 }
 
 const defaultArtifacts = [
@@ -103,54 +117,110 @@ export class MetadataReleaseManager {
     };
   }
 
+  async prepareMany(
+    requests: readonly MetadataReleaseRequest[],
+    artifactGenerators: readonly string[] = defaultArtifacts,
+  ): Promise<MetadataBatchReleasePreparation> {
+    const objectTypeIds = new Set<string>();
+    for (const request of requests) {
+      if (objectTypeIds.has(request.objectTypeId)) {
+        throw new MetadataError(`Duplicate object type '${request.objectTypeId}' in metadata release batch.`);
+      }
+      objectTypeIds.add(request.objectTypeId);
+    }
+
+    const releases: MetadataReleasePreparation[] = [];
+    for (const request of requests) {
+      releases.push(await this.prepare(request.objectTypeId, request.targetVersion, artifactGenerators));
+    }
+    const blockingMigrationSteps = releases.reduce(
+      (total, release) => total + this.executableBlockingSteps(release).length,
+      0,
+    );
+    return {
+      releases,
+      artifacts: releases.flatMap((release) => release.artifacts),
+      requiresManualReview: releases.some((release) => release.migrationPlan?.requiresManualReview === true),
+      blockingMigrationSteps,
+    };
+  }
+
   async release(
     objectTypeId: string,
     targetVersion: number,
     options: MetadataReleaseOptions = {},
   ): Promise<MetadataReleaseResult> {
-    const preparation = await this.prepare(
-      objectTypeId,
-      targetVersion,
+    const batch = await this.releaseMany([{ objectTypeId, targetVersion }], options);
+    const preparation = batch.releases[0]!;
+    return { ...preparation, published: batch.published[0]! };
+  }
+
+  async releaseMany(
+    requests: readonly MetadataReleaseRequest[],
+    options: MetadataReleaseOptions = {},
+  ): Promise<MetadataBatchReleaseResult> {
+    if (requests.length === 0) {
+      return { releases: [], artifacts: [], requiresManualReview: false, blockingMigrationSteps: 0, published: [] };
+    }
+
+    const preparation = await this.prepareMany(
+      requests,
       options.artifactGenerators ?? defaultArtifacts,
     );
-    const plan = preparation.migrationPlan;
 
-    if (plan?.requiresManualReview && options.approveBreaking !== true) {
+    if (preparation.requiresManualReview && options.approveBreaking !== true) {
+      throw new MetadataError("Metadata release batch contains breaking schema changes and requires explicit approval.");
+    }
+    if (preparation.blockingMigrationSteps > 0 && !options.migrationExecutor) {
       throw new MetadataError(
-        `Schema evolution '${objectTypeId}' ${plan.fromVersion} -> ${plan.toVersion} contains breaking changes and requires explicit approval.`,
+        `Metadata release batch requires ${preparation.blockingMigrationSteps} blocking migration step(s) before publication.`,
       );
     }
 
-    const executableBlocking = (plan?.steps ?? []).filter(
+    if (options.migrationExecutor) {
+      for (const release of preparation.releases) {
+        const plan = release.migrationPlan;
+        if (!plan) continue;
+        const context: MigrationExecutionContext = {
+          objectTypeId: release.objectTypeId,
+          fromVersion: plan.fromVersion,
+          toVersion: plan.toVersion,
+        };
+        for (const step of this.executableBlockingSteps(release)) {
+          await options.migrationExecutor.execute(step, context);
+        }
+      }
+    }
+
+    for (const release of preparation.releases) await this.assertDraftStable(release);
+
+    const published = await this.catalog.publishMany(
+      preparation.releases.map((release) => ({
+        objectTypeId: release.objectTypeId,
+        version: release.targetVersion,
+        expectedRevision: release.targetRevision,
+      })),
+    );
+    return { ...preparation, published };
+  }
+
+  private executableBlockingSteps(release: MetadataReleasePreparation): readonly MigrationStep[] {
+    return (release.migrationPlan?.steps ?? []).filter(
       (step) => step.blocking && step.kind !== "manual-review",
     );
-    if (executableBlocking.length > 0 && !options.migrationExecutor) {
-      throw new MetadataError(
-        `Schema evolution '${objectTypeId}' requires ${executableBlocking.length} blocking migration step(s) before publication.`,
-      );
-    }
+  }
 
-    if (options.migrationExecutor && plan) {
-      const context: MigrationExecutionContext = {
-        objectTypeId,
-        fromVersion: plan.fromVersion,
-        toVersion: plan.toVersion,
-      };
-      for (const step of executableBlocking) await options.migrationExecutor.execute(step, context);
-    }
-
-    // Ensure the draft did not move while migration work was executing.
-    const current = await this.catalog.get(objectTypeId, targetVersion);
+  private async assertDraftStable(preparation: MetadataReleasePreparation): Promise<void> {
+    const current = await this.catalog.get(preparation.objectTypeId, preparation.targetVersion);
     if (!current || current.status !== "draft") {
-      throw new MetadataError(`Metadata '${objectTypeId}@${targetVersion}' is no longer an unpublished draft.`);
+      throw new MetadataError(
+        `Metadata '${preparation.objectTypeId}@${preparation.targetVersion}' is no longer an unpublished draft.`,
+      );
     }
     if (current.revision !== preparation.targetRevision) {
       throw new MetadataError(
-        `Metadata '${objectTypeId}@${targetVersion}' changed during release preparation; prepare the release again.`,
+        `Metadata '${preparation.objectTypeId}@${preparation.targetVersion}' changed during release preparation; prepare the release again.`,
       );
     }
-
-    const published = await this.catalog.publish(objectTypeId, targetVersion, preparation.targetRevision);
-    return { ...preparation, published };
   }
 }
