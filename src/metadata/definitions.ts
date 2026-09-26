@@ -17,14 +17,34 @@ export type RelationshipKind = "association" | "aggregation" | "composition";
  */
 export type ReferentialAction = "restrict" | "cascade" | "detach";
 
+export type ConstraintSeverity = "error" | "warning" | "info";
+
+/** Serializable constraint metadata. Built-ins use the well-known fields below; custom constraints may use options. */
 export interface ConstraintDefinition {
-  readonly type: "minLength" | "maxLength" | "range" | "pattern";
+  readonly type: string;
   readonly minimum?: number;
   readonly maximum?: number;
   readonly value?: number;
   readonly pattern?: string;
   readonly flags?: string;
+  readonly options?: Readonly<Record<string, unknown>>;
   readonly message?: string;
+  readonly severity?: ConstraintSeverity;
+}
+
+/** Cross-field/object-level validation rule resolved through the constraint registry. */
+export interface ObjectConstraintDefinition {
+  readonly type: string;
+  readonly path?: string;
+  readonly options?: Readonly<Record<string, unknown>>;
+  readonly message?: string;
+  readonly severity?: ConstraintSeverity;
+}
+
+/** A computed attribute delegates calculation to a named runtime behaviour. */
+export interface ComputedAttributeDefinition {
+  readonly behavior: string;
+  readonly dependencies?: readonly string[];
 }
 
 export interface AttributeDefinition {
@@ -36,6 +56,7 @@ export interface AttributeDefinition {
   readonly unique?: boolean;
   readonly default?: unknown;
   readonly constraints?: readonly ConstraintDefinition[];
+  readonly computed?: ComputedAttributeDefinition;
 }
 
 export interface RelationshipDefinition {
@@ -78,6 +99,27 @@ export interface IndexDefinition {
   readonly attributes: readonly IndexAttributeDefinition[];
 }
 
+export interface OperationDefinition {
+  /** Runtime operation handler registered under this name. */
+  readonly behavior: string;
+  readonly description?: string;
+}
+
+export interface EventDefinition {
+  readonly description?: string;
+}
+
+export type BehaviorHook =
+  | "beforeSet"
+  | "afterSet"
+  | "beforeValidate"
+  | "afterValidate"
+  | "beforeOperation"
+  | "afterOperation";
+
+export type HookDefinitionMap = Readonly<Partial<Record<BehaviorHook, readonly string[]>>>;
+export type OperationDefinitionMap = Readonly<Record<string, OperationDefinition>>;
+export type EventDefinitionMap = Readonly<Record<string, EventDefinition>>;
 export type AttributeDefinitionMap = Readonly<Record<string, AttributeDefinition>>;
 export type RelationshipDefinitionMap = Readonly<Record<string, RelationshipDefinition>>;
 
@@ -103,6 +145,10 @@ export interface ObjectTypeDefinition<
   readonly attributes: A;
   readonly relationships?: R;
   readonly indexes?: readonly IndexDefinition[];
+  readonly constraints?: readonly ObjectConstraintDefinition[];
+  readonly operations?: OperationDefinitionMap;
+  readonly events?: EventDefinitionMap;
+  readonly hooks?: HookDefinitionMap;
 }
 
 export interface ResolvedObjectTypeDefinition extends ObjectTypeDefinition {
