@@ -80,6 +80,7 @@ export class MetadataModuleCatalog {
     return this.store.save(record, expectedRevision);
   }
 
+  /** Direct publication remains available for callers that already completed external release work. */
   async publish(
     moduleId: string,
     version: number,
@@ -87,28 +88,65 @@ export class MetadataModuleCatalog {
     manifest: MetadataModuleManifest,
   ): Promise<MetadataModuleRecord> {
     const current = await this.requireRecord(moduleId, version);
-    if (current.status !== "draft") {
-      throw new MetadataError(`Metadata module '${moduleKey(moduleId, version)}' must be draft before publication.`);
-    }
-    const latestPublished = await this.latest(moduleId, "published");
-    if (latestPublished && version <= latestPublished.moduleVersion) {
-      throw new MetadataError(
-        `Module version ${version} must be greater than published version ${latestPublished.moduleVersion}.`,
-      );
-    }
-
-    const registry = await this.createRegistryWithCandidate(current.definition);
-    const resolution = registry.resolve(moduleId, version);
-    await this.assertResolvedDependenciesPublished(resolution);
-    const expected = expectedManifest(resolution);
-    if (canonical(expected) !== canonical(manifest)) {
-      throw new MetadataError(`Released manifest for '${moduleKey(moduleId, version)}' does not match resolved module metadata.`);
-    }
-
+    await this.validatePublicationCandidate(current, manifest);
     return this.store.save({
       ...current,
       status: "published",
       releasedManifest: structuredClone(manifest),
+      updatedAt: this.clock().toISOString(),
+    }, expectedRevision);
+  }
+
+  /** Lock the exact module definition/manifest before member migration and publication starts. */
+  async beginRelease(
+    moduleId: string,
+    version: number,
+    expectedRevision: number,
+    manifest: MetadataModuleManifest,
+  ): Promise<MetadataModuleRecord> {
+    const current = await this.requireRecord(moduleId, version);
+    await this.validatePublicationCandidate(current, manifest);
+    return this.store.save({
+      ...current,
+      status: "releasing",
+      releasedManifest: structuredClone(manifest),
+      updatedAt: this.clock().toISOString(),
+    }, expectedRevision);
+  }
+
+  /** Complete a previously locked release after every module member is published. */
+  async completeRelease(moduleId: string, version: number, expectedRevision: number): Promise<MetadataModuleRecord> {
+    const current = await this.requireRecord(moduleId, version);
+    if (current.status !== "releasing") {
+      throw new MetadataError(`Metadata module '${moduleKey(moduleId, version)}' must be releasing before completion.`);
+    }
+    if (!current.releasedManifest) {
+      throw new MetadataError(`Releasing module '${moduleKey(moduleId, version)}' is missing its locked manifest.`);
+    }
+
+    const records = await this.store.list();
+    const simulated = new Map(records.map((record) => [moduleKey(record.moduleId, record.moduleVersion), record]));
+    const completed: MetadataModuleRecord = { ...current, status: "published" };
+    simulated.set(moduleKey(moduleId, version), completed);
+    this.validateLockedRecord(completed, simulated);
+
+    return this.store.save({
+      ...current,
+      status: "published",
+      updatedAt: this.clock().toISOString(),
+    }, expectedRevision);
+  }
+
+  /** Return a release lock to draft. The orchestrator only permits this before member publication. */
+  async abortRelease(moduleId: string, version: number, expectedRevision: number): Promise<MetadataModuleRecord> {
+    const current = await this.requireRecord(moduleId, version);
+    if (current.status !== "releasing") {
+      throw new MetadataError(`Metadata module '${moduleKey(moduleId, version)}' must be releasing before abort.`);
+    }
+    const { releasedManifest: _releasedManifest, ...unlocked } = current;
+    return this.store.save({
+      ...unlocked,
+      status: "draft",
       updatedAt: this.clock().toISOString(),
     }, expectedRevision);
   }
@@ -142,7 +180,6 @@ export class MetadataModuleCatalog {
     );
   }
 
-  /** Load every published module version so version-range resolution remains correct. */
   async createPublishedRegistry(): Promise<MetadataModuleRegistry> {
     const registry = new MetadataModuleRegistry();
     for (const record of await this.store.list({ status: "published" })) registry.register(record.definition);
@@ -168,7 +205,6 @@ export class MetadataModuleCatalog {
     const simulated = new Map(existingByKey);
     const incomingKeys = new Set<string>();
 
-    // Validate the complete bundle before writing any record.
     for (const incoming of bundle.records) {
       const key = moduleKey(incoming.moduleId, incoming.moduleVersion);
       if (incomingKeys.has(key)) throw new MetadataError(`Duplicate module bundle record '${key}'.`);
@@ -185,7 +221,9 @@ export class MetadataModuleCatalog {
     }
 
     for (const incoming of bundle.records) {
-      if (incoming.status === "published") this.validateLockedPublishedRecord(incoming, simulated);
+      if (incoming.status === "published" || incoming.status === "releasing") {
+        this.validateLockedRecord(incoming, simulated);
+      }
     }
 
     for (const incoming of bundle.records) {
@@ -209,13 +247,36 @@ export class MetadataModuleCatalog {
     registry.register(definition);
   }
 
-  private validateLockedPublishedRecord(
+  private async validatePublicationCandidate(
+    current: MetadataModuleRecord,
+    manifest: MetadataModuleManifest,
+  ): Promise<void> {
+    if (current.status !== "draft") {
+      throw new MetadataError(`Metadata module '${moduleKey(current.moduleId, current.moduleVersion)}' must be draft before publication.`);
+    }
+    const latestPublished = await this.latest(current.moduleId, "published");
+    if (latestPublished && current.moduleVersion <= latestPublished.moduleVersion) {
+      throw new MetadataError(
+        `Module version ${current.moduleVersion} must be greater than published version ${latestPublished.moduleVersion}.`,
+      );
+    }
+    const registry = await this.createRegistryWithCandidate(current.definition);
+    const resolution = registry.resolve(current.moduleId, current.moduleVersion);
+    await this.assertResolvedDependenciesPublished(resolution);
+    if (canonical(expectedManifest(resolution)) !== canonical(manifest)) {
+      throw new MetadataError(
+        `Released manifest for '${moduleKey(current.moduleId, current.moduleVersion)}' does not match resolved module metadata.`,
+      );
+    }
+  }
+
+  private validateLockedRecord(
     record: MetadataModuleRecord,
     records: ReadonlyMap<string, MetadataModuleRecord>,
   ): void {
     const manifest = record.releasedManifest;
     if (!manifest) {
-      throw new MetadataError(`Published module '${moduleKey(record.moduleId, record.moduleVersion)}' is missing a released manifest.`);
+      throw new MetadataError(`Module '${moduleKey(record.moduleId, record.moduleVersion)}' is missing a locked release manifest.`);
     }
     const registry = new MetadataModuleRegistry();
     registry.register(record.definition);
@@ -223,7 +284,7 @@ export class MetadataModuleCatalog {
       const dependencyRecord = records.get(moduleKey(dependency.moduleId, dependency.version));
       if (!dependencyRecord || dependencyRecord.status !== "published") {
         throw new MetadataError(
-          `Published module '${moduleKey(record.moduleId, record.moduleVersion)}' locks missing dependency '${moduleKey(dependency.moduleId, dependency.version)}'.`,
+          `Module '${moduleKey(record.moduleId, record.moduleVersion)}' locks missing dependency '${moduleKey(dependency.moduleId, dependency.version)}'.`,
         );
       }
       registry.register(dependencyRecord.definition);
@@ -231,7 +292,7 @@ export class MetadataModuleCatalog {
     const resolved = registry.resolve(record.moduleId, record.moduleVersion);
     if (canonical(expectedManifest(resolved)) !== canonical(manifest)) {
       throw new MetadataError(
-        `Published module '${moduleKey(record.moduleId, record.moduleVersion)}' has a released manifest that does not resolve from its locked dependency versions.`,
+        `Module '${moduleKey(record.moduleId, record.moduleVersion)}' has a locked manifest that does not resolve from its dependency versions.`,
       );
     }
   }
