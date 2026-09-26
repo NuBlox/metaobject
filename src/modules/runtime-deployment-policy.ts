@@ -1,5 +1,10 @@
 import { MetadataError } from "../errors/errors.js";
-import type { RuntimeDeploymentRecord } from "./runtime-deployment-store.js";
+import {
+  appendRuntimeDeploymentJournal,
+  type RuntimeDeploymentJournalEvent,
+  type RuntimeDeploymentRecord,
+  type RuntimeDeploymentStore,
+} from "./runtime-deployment-store.js";
 
 export type RuntimeDeploymentPolicyOutcome = "allow" | "warn" | "deny";
 
@@ -35,6 +40,13 @@ export interface RuntimeDeploymentPolicyReport {
   readonly hasWarnings: boolean;
   readonly evaluations: readonly RuntimeDeploymentPolicyEvaluation[];
 }
+
+export interface RuntimeDeploymentPolicyGateResult {
+  readonly record: RuntimeDeploymentRecord;
+  readonly report: RuntimeDeploymentPolicyReport;
+}
+
+export type RuntimeDeploymentPolicyClock = () => Date;
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -103,5 +115,55 @@ export class RuntimeDeploymentPolicyRegistry {
       hasWarnings: evaluations.some((evaluation) => evaluation.outcome === "warn"),
       evaluations,
     };
+  }
+}
+
+/**
+ * Evaluate a planned deployment and atomically append every policy decision to
+ * its M19/M20 journal before the caller decides whether the deployment may start.
+ */
+export class RuntimeDeploymentPolicyGate {
+  constructor(
+    private readonly store: RuntimeDeploymentStore,
+    private readonly policies: RuntimeDeploymentPolicyRegistry,
+    private readonly clock: RuntimeDeploymentPolicyClock = () => new Date(),
+  ) {}
+
+  async evaluate(record: RuntimeDeploymentRecord): Promise<RuntimeDeploymentPolicyGateResult> {
+    if (record.status !== "planned") {
+      throw new MetadataError(`Runtime deployment '${record.deploymentId}' must be planned for preflight policy evaluation.`);
+    }
+
+    const report = await this.policies.evaluate(record);
+    if (report.evaluations.length === 0) return { record, report };
+
+    const occurredAt = this.clock().toISOString();
+    const events: RuntimeDeploymentJournalEvent[] = report.evaluations.map((evaluation) => ({
+      kind: "deployment-policy-evaluated",
+      occurredAt,
+      policyId: evaluation.policyId,
+      policyOutcome: evaluation.outcome,
+      ...(evaluation.message === undefined ? {} : { message: evaluation.message }),
+      ...(evaluation.evidence === undefined
+        ? {}
+        : {
+            evidence: {
+              recordedAt: occurredAt,
+              ...(evaluation.evidence.externalReference === undefined
+                ? {}
+                : { externalReference: evaluation.evidence.externalReference }),
+              ...(evaluation.evidence.details === undefined
+                ? {}
+                : { details: structuredClone(evaluation.evidence.details) }),
+            },
+          }),
+    }));
+
+    const stored = await this.store.save({
+      ...record,
+      journal: appendRuntimeDeploymentJournal(record, ...events),
+      updatedAt: occurredAt,
+    }, record.revision);
+    return { record: stored, report };
   }
 }
