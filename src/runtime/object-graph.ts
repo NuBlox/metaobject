@@ -61,10 +61,19 @@ export class ObjectGraph {
     this.attach(target);
 
     const definition = this.relationshipDefinition(source, relationshipName);
-    if (target.objectType.id !== definition.target) {
+    if (!this.objectTypes.isA(target.objectType.id, definition.target)) {
       throw new MetadataError(
-        `Relationship '${source.objectType.id}.${relationshipName}' requires target type '${definition.target}', received '${target.objectType.id}'.`,
+        `Relationship '${source.objectType.id}.${relationshipName}' requires target type assignable to '${definition.target}', received '${target.objectType.id}'.`,
       );
+    }
+
+    if (definition.kind === "composition") {
+      const parent = this.compositeParent(target);
+      if (parent && (parent.object !== source || parent.relationship !== relationshipName)) {
+        throw new MetadataError(
+          `Object '${objectIdentityKey(toReference(target))}' already has composite parent '${parent.object.objectType.id}:${parent.object.id}' via '${parent.relationship}'.`,
+        );
+      }
     }
 
     const sourceRef = toReference(source);
@@ -120,6 +129,19 @@ export class ObjectGraph {
     return source.relationshipReferences(relationshipName).map((reference) => this.require(reference));
   }
 
+  compositeParent(target: MetaObject): { readonly object: MetaObject; readonly relationship: string } | undefined {
+    const targetRef = toReference(target);
+    for (const source of this.#objects.values()) {
+      if (source.state === "deleted") continue;
+      for (const [name, definition] of Object.entries(source.objectType.relationships ?? {})) {
+        if (definition.kind === "composition" && source.hasRelationship(name, targetRef)) {
+          return { object: source, relationship: name };
+        }
+      }
+    }
+    return undefined;
+  }
+
   /**
    * Apply relationship delete policies and mark the object deleted.
    * This mutates only the in-memory graph. Persistence remains the repository's job.
@@ -134,10 +156,8 @@ export class ObjectGraph {
     if (visited.has(key) || object.state === "deleted") return;
     visited.add(key);
 
-    // First reject direct restrictions before making local mutations.
     this.assertDeletionNotRestricted(object);
 
-    // Apply incoming policies: another object references the object being deleted.
     for (const source of [...this.#objects.values()]) {
       if (source === object || source.state === "deleted") continue;
       for (const [name, definition] of Object.entries(source.objectType.relationships ?? {})) {
@@ -148,18 +168,16 @@ export class ObjectGraph {
       }
     }
 
-    // Apply outgoing policies from the object being deleted.
     for (const [name, definition] of Object.entries(object.objectType.relationships ?? {})) {
       const refs = object.relationshipReferences(name);
       if (refs.length === 0) continue;
-      const action = definition.onSourceDelete ?? "detach";
+      const action = this.sourceDeleteAction(definition);
       if (action === "cascade") {
         for (const reference of refs) {
           const target = this.get(reference);
           if (target) this.deleteInternal(target, visited);
         }
       }
-      // Both cascade and detach remove graph edges from the object being deleted.
       this.disconnect(object, name);
     }
 
@@ -168,7 +186,7 @@ export class ObjectGraph {
 
   private assertDeletionNotRestricted(object: MetaObject): void {
     for (const [name, definition] of Object.entries(object.objectType.relationships ?? {})) {
-      if ((definition.onSourceDelete ?? "detach") === "restrict" && object.relationshipCount(name) > 0) {
+      if (this.sourceDeleteAction(definition) === "restrict" && object.relationshipCount(name) > 0) {
         throw new MetadataError(
           `Cannot delete '${objectIdentityKey(toReference(object))}': relationship '${name}' restricts source deletion.`,
         );
@@ -196,7 +214,7 @@ export class ObjectGraph {
     action: ReferentialAction,
     visited: Set<string>,
   ): void {
-    if (action === "restrict") return; // already rejected in preflight
+    if (action === "restrict") return;
     if (action === "cascade") {
       this.deleteInternal(source, visited);
       return;
@@ -239,7 +257,7 @@ export class ObjectGraph {
     if (!definition.inverse) {
       throw new MetadataError(`Relationship '${source.objectType.id}.${relationshipName}' has no inverse.`);
     }
-    const targetType = this.objectTypes.get(definition.target);
+    const targetType = this.objectTypes.resolve(definition.target);
     const inverse = targetType.relationships?.[definition.inverse];
     if (!inverse) {
       throw new MetadataError(
@@ -247,6 +265,10 @@ export class ObjectGraph {
       );
     }
     return inverse;
+  }
+
+  private sourceDeleteAction(definition: RelationshipDefinition): ReferentialAction {
+    return definition.onSourceDelete ?? (definition.kind === "composition" ? "cascade" : "detach");
   }
 
   private asReference(value: MetaObject | ObjectReference): ObjectReference {
