@@ -1,0 +1,245 @@
+import { MetadataError } from "../errors/errors.js";
+import type { RuntimeProfileUpgradePlan, RuntimeProfileUpgradeStep } from "./runtime-profile-upgrade.js";
+import type {
+  RuntimeDeploymentRecord,
+  RuntimeDeploymentStepState,
+  RuntimeDeploymentStore,
+} from "./runtime-deployment-store.js";
+
+export type RuntimeDeploymentClock = () => Date;
+export type RuntimeDeploymentRecoveryResolution = "retry" | "completed";
+
+export interface RuntimeProfileUpgradePlanProvider {
+  plan(profileId: string, fromVersion: number, toVersion: number): Promise<RuntimeProfileUpgradePlan>;
+}
+
+export interface RuntimeDeploymentStepLease {
+  readonly record: RuntimeDeploymentRecord;
+  readonly step: RuntimeProfileUpgradeStep;
+}
+
+function replaceStep(
+  states: readonly RuntimeDeploymentStepState[],
+  stepId: string,
+  replacement: RuntimeDeploymentStepState,
+): readonly RuntimeDeploymentStepState[] {
+  return states.map((state) => state.stepId === stepId ? replacement : state);
+}
+
+export class RuntimeDeploymentCatalog {
+  constructor(
+    private readonly store: RuntimeDeploymentStore,
+    private readonly upgrades: RuntimeProfileUpgradePlanProvider,
+    private readonly clock: RuntimeDeploymentClock = () => new Date(),
+  ) {}
+
+  /** Create a durable deployment by freezing the exact M16 plan at creation time. */
+  async create(
+    deploymentId: string,
+    profileId: string,
+    fromProfileVersion: number,
+    toProfileVersion: number,
+  ): Promise<RuntimeDeploymentRecord> {
+    if (!deploymentId.trim()) throw new MetadataError("Runtime deployment id is required.");
+    if (await this.store.get(deploymentId)) throw new MetadataError(`Runtime deployment '${deploymentId}' already exists.`);
+    const plan = await this.upgrades.plan(profileId, fromProfileVersion, toProfileVersion);
+    const now = this.clock().toISOString();
+    return this.store.save({
+      deploymentId,
+      status: "planned",
+      revision: 0,
+      profileId,
+      fromProfileVersion,
+      toProfileVersion,
+      plan: structuredClone(plan),
+      steps: plan.steps.map((step) => ({ stepId: step.id, status: "pending", attempts: 0 })),
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  async get(deploymentId: string): Promise<RuntimeDeploymentRecord | null> {
+    return this.store.get(deploymentId);
+  }
+
+  /** Record the explicit operator approval required by a breaking/manual-review plan. */
+  async approve(deploymentId: string, expectedRevision: number): Promise<RuntimeDeploymentRecord> {
+    const current = await this.requireRecord(deploymentId);
+    if (current.status !== "planned") {
+      throw new MetadataError(`Runtime deployment '${deploymentId}' must be planned before approval.`);
+    }
+    const now = this.clock().toISOString();
+    return this.store.save({ ...current, approvedAt: now, updatedAt: now }, expectedRevision);
+  }
+
+  async start(deploymentId: string, expectedRevision: number): Promise<RuntimeDeploymentRecord> {
+    const current = await this.requireRecord(deploymentId);
+    if (current.status !== "planned") {
+      throw new MetadataError(`Runtime deployment '${deploymentId}' must be planned before start.`);
+    }
+    if (current.plan.requiresManualReview && !current.approvedAt) {
+      throw new MetadataError(`Runtime deployment '${deploymentId}' requires explicit approval before start.`);
+    }
+    const now = this.clock().toISOString();
+    if (current.steps.length === 0) {
+      return this.store.save({
+        ...current,
+        status: "completed",
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      }, expectedRevision);
+    }
+    return this.store.save({ ...current, status: "running", startedAt: now, updatedAt: now }, expectedRevision);
+  }
+
+  /**
+   * Persist a lease on the next pending step before external execution starts.
+   * A surviving `running` step therefore represents an uncertain side effect and
+   * must be explicitly recovered after process interruption.
+   */
+  async beginNextStep(deploymentId: string, expectedRevision: number): Promise<RuntimeDeploymentStepLease> {
+    const current = await this.requireRecord(deploymentId);
+    if (current.status !== "running") {
+      throw new MetadataError(`Runtime deployment '${deploymentId}' must be running before a step can begin.`);
+    }
+    const inFlight = current.steps.find((step) => step.status === "running");
+    if (inFlight) {
+      throw new MetadataError(
+        `Runtime deployment '${deploymentId}' has unresolved running step '${inFlight.stepId}'; recover it explicitly.`,
+      );
+    }
+    const failed = current.steps.find((step) => step.status === "failed");
+    if (failed) throw new MetadataError(`Runtime deployment '${deploymentId}' has failed step '${failed.stepId}'.`);
+    const pending = current.steps.find((step) => step.status === "pending");
+    if (!pending) throw new MetadataError(`Runtime deployment '${deploymentId}' has no pending step.`);
+    const definition = current.plan.steps.find((step) => step.id === pending.stepId);
+    if (!definition) throw new MetadataError(`Runtime deployment '${deploymentId}' is missing plan step '${pending.stepId}'.`);
+
+    const now = this.clock().toISOString();
+    const nextState: RuntimeDeploymentStepState = {
+      stepId: pending.stepId,
+      status: "running",
+      attempts: pending.attempts + 1,
+      startedAt: now,
+    };
+    const record = await this.store.save({
+      ...current,
+      steps: replaceStep(current.steps, pending.stepId, nextState),
+      updatedAt: now,
+    }, expectedRevision);
+    return { record, step: structuredClone(definition) };
+  }
+
+  async completeStep(
+    deploymentId: string,
+    stepId: string,
+    expectedRevision: number,
+  ): Promise<RuntimeDeploymentRecord> {
+    const current = await this.requireRecord(deploymentId);
+    if (current.status !== "running") throw new MetadataError(`Runtime deployment '${deploymentId}' is not running.`);
+    const state = this.requireStep(current, stepId);
+    if (state.status !== "running") {
+      throw new MetadataError(`Runtime deployment step '${stepId}' must be running before completion.`);
+    }
+    const now = this.clock().toISOString();
+    const steps = replaceStep(current.steps, stepId, {
+      ...state,
+      status: "completed",
+      completedAt: now,
+    });
+    const complete = steps.every((step) => step.status === "completed");
+    return this.store.save({
+      ...current,
+      status: complete ? "completed" : "running",
+      steps,
+      ...(complete ? { completedAt: now } : {}),
+      updatedAt: now,
+    }, expectedRevision);
+  }
+
+  async failStep(
+    deploymentId: string,
+    stepId: string,
+    expectedRevision: number,
+    error: string,
+  ): Promise<RuntimeDeploymentRecord> {
+    const current = await this.requireRecord(deploymentId);
+    if (current.status !== "running") throw new MetadataError(`Runtime deployment '${deploymentId}' is not running.`);
+    const state = this.requireStep(current, stepId);
+    if (state.status !== "running") throw new MetadataError(`Runtime deployment step '${stepId}' is not running.`);
+    if (!error.trim()) throw new MetadataError("Runtime deployment step failure requires an error message.");
+    const now = this.clock().toISOString();
+    return this.store.save({
+      ...current,
+      status: "failed",
+      steps: replaceStep(current.steps, stepId, {
+        ...state,
+        status: "failed",
+        lastError: error,
+      }),
+      updatedAt: now,
+    }, expectedRevision);
+  }
+
+  /**
+   * Resolve a failed step or an in-flight step left by an interrupted process.
+   * `retry` returns it to pending; `completed` confirms the external side effect
+   * already succeeded and advances the durable state without executing it again.
+   */
+  async recoverStep(
+    deploymentId: string,
+    stepId: string,
+    expectedRevision: number,
+    resolution: RuntimeDeploymentRecoveryResolution,
+  ): Promise<RuntimeDeploymentRecord> {
+    const current = await this.requireRecord(deploymentId);
+    if (current.status !== "running" && current.status !== "failed") {
+      throw new MetadataError(`Runtime deployment '${deploymentId}' is not recoverable from status '${current.status}'.`);
+    }
+    const state = this.requireStep(current, stepId);
+    if (state.status !== "running" && state.status !== "failed") {
+      throw new MetadataError(`Runtime deployment step '${stepId}' is not running or failed.`);
+    }
+    const now = this.clock().toISOString();
+    const recovered: RuntimeDeploymentStepState = resolution === "retry"
+      ? { stepId, status: "pending", attempts: state.attempts }
+      : { ...state, status: "completed", completedAt: now };
+    const steps = replaceStep(current.steps, stepId, recovered);
+    const complete = steps.every((step) => step.status === "completed");
+    return this.store.save({
+      ...current,
+      status: complete ? "completed" : "running",
+      steps,
+      ...(complete ? { completedAt: now } : {}),
+      updatedAt: now,
+    }, expectedRevision);
+  }
+
+  /** Cancel only before execution starts; partial external work must be recovered, not hidden as cancellation. */
+  async cancel(deploymentId: string, expectedRevision: number): Promise<RuntimeDeploymentRecord> {
+    const current = await this.requireRecord(deploymentId);
+    if (current.status !== "planned") {
+      throw new MetadataError(`Only a planned runtime deployment can be cancelled: '${deploymentId}'.`);
+    }
+    const now = this.clock().toISOString();
+    return this.store.save({
+      ...current,
+      status: "cancelled",
+      cancelledAt: now,
+      updatedAt: now,
+    }, expectedRevision);
+  }
+
+  private async requireRecord(deploymentId: string): Promise<RuntimeDeploymentRecord> {
+    const record = await this.store.get(deploymentId);
+    if (!record) throw new MetadataError(`Unknown runtime deployment '${deploymentId}'.`);
+    return record;
+  }
+
+  private requireStep(record: RuntimeDeploymentRecord, stepId: string): RuntimeDeploymentStepState {
+    const state = record.steps.find((step) => step.stepId === stepId);
+    if (!state) throw new MetadataError(`Unknown runtime deployment step '${stepId}'.`);
+    return state;
+  }
+}
