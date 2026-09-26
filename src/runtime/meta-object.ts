@@ -34,6 +34,8 @@ function isToMany(definition: RelationshipDefinition): boolean {
   return definition.cardinality === "one-to-many" || definition.cardinality === "many-to-many";
 }
 
+export type TypeAssignability = (actualType: string, expectedType: string) => boolean;
+
 export class MetaObject<TValues extends Record<string, unknown> = Record<string, unknown>> {
   readonly id: string;
   readonly objectType: ObjectTypeDefinition;
@@ -43,17 +45,19 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
   readonly #relationships = new Map<string, RelationshipValue>();
   readonly #changes = new Map<string, ChangeRecord>();
   readonly #relationshipChanges = new Map<string, RelationshipChangeRecord>();
+  readonly #isTypeAssignable: TypeAssignability;
 
   constructor(
     id: string,
     objectType: ObjectTypeDefinition,
     private readonly types: TypeRegistry,
-    options: { version?: number; state?: ObjectState } = {},
+    options: { version?: number; state?: ObjectState; isTypeAssignable?: TypeAssignability } = {},
   ) {
     this.id = id;
     this.objectType = objectType;
     this.#version = options.version ?? 0;
     this.#state = options.state ?? "new";
+    this.#isTypeAssignable = options.isTypeAssignable ?? ((actual, expected) => actual === expected);
   }
 
   get version(): number { return this.#version; }
@@ -133,6 +137,9 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
     if (index === undefined) {
       next.push(copied);
     } else {
+      if (!definition.ordered) {
+        throw new MetadataError(`Relationship '${name}' is not ordered and does not accept an insertion index.`);
+      }
       if (!Number.isSafeInteger(index) || index < 0 || index > next.length) {
         throw new MetadataError(`Relationship '${name}' insertion index '${index}' is out of range.`);
       }
@@ -193,6 +200,12 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
     return target === undefined
       ? refs.length > 0
       : refs.some((item) => sameObjectIdentity(item, target));
+  }
+
+  /** True when an actual object type can be assigned to this relationship target. */
+  acceptsRelationshipTarget(name: string, actualType: string): boolean {
+    const definition = this.relationshipDefinition(name);
+    return this.#isTypeAssignable(actualType, definition.target);
   }
 
   changedAttributes(): Readonly<Record<string, ChangeRecord>> {
@@ -305,8 +318,8 @@ export class MetaObject<TValues extends Record<string, unknown> = Record<string,
 
   private assertReference(name: string, definition: RelationshipDefinition, ref: ObjectReference): void {
     if (!ref.id || !ref.type) throw new MetadataError(`Relationship '${name}' requires a target id and type.`);
-    if (ref.type !== definition.target) {
-      throw new MetadataError(`Relationship '${name}' requires target type '${definition.target}', received '${ref.type}'.`);
+    if (!this.#isTypeAssignable(ref.type, definition.target)) {
+      throw new MetadataError(`Relationship '${name}' requires target type assignable to '${definition.target}', received '${ref.type}'.`);
     }
   }
 
