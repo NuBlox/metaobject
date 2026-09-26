@@ -12,6 +12,12 @@ import { denormalizeObjectType, normalizeObjectType } from "./persistence-model.
 
 export type MetadataClock = () => Date;
 
+export interface MetadataPublishRequest {
+  readonly objectTypeId: string;
+  readonly version: number;
+  readonly expectedRevision: number;
+}
+
 export class MetadataCatalog {
   constructor(
     private readonly store: MetadataStore,
@@ -41,25 +47,48 @@ export class MetadataCatalog {
   }
 
   async publish(objectTypeId: string, version: number, expectedRevision: number): Promise<MetadataRecord> {
-    const current = await this.requireRecord(objectTypeId, version);
-    if (current.status === "published") return current;
-    if (current.status !== "draft") {
-      throw new MetadataError(`Metadata '${objectTypeId}@${version}' must be draft before publication.`);
+    const published = await this.publishMany([{ objectTypeId, version, expectedRevision }]);
+    return published[0]!;
+  }
+
+  /**
+   * Validate a set of drafts as one complete runtime graph before publication.
+   * This supports bidirectional relationships and inheritance cycles of dependency
+   * (not inheritance cycles themselves), where no member can be activated alone.
+   */
+  async publishMany(requests: readonly MetadataPublishRequest[]): Promise<readonly MetadataRecord[]> {
+    if (requests.length === 0) return [];
+    const keys = new Set<string>();
+    const candidates: Array<{ record: MetadataRecord; expectedRevision: number }> = [];
+    for (const request of requests) {
+      const key = `${request.objectTypeId}@${request.version}`;
+      if (keys.has(key)) throw new MetadataError(`Duplicate metadata publication request '${key}'.`);
+      keys.add(key);
+      const record = await this.requireRecord(request.objectTypeId, request.version);
+      if (record.status !== "draft") {
+        throw new MetadataError(`Metadata '${key}' must be draft before publication.`);
+      }
+      candidates.push({ record, expectedRevision: request.expectedRevision });
     }
 
-    const candidate = denormalizeObjectType(current.snapshot);
-    const published = await this.latestRecords("published");
-    const definitions = published
-      .filter((record) => record.objectTypeId !== objectTypeId)
+    const replacingIds = new Set(candidates.map(({ record }) => record.objectTypeId));
+    const existingPublished = await this.latestRecords("published");
+    const definitions = existingPublished
+      .filter((record) => !replacingIds.has(record.objectTypeId))
       .map((record) => denormalizeObjectType(record.snapshot));
-    definitions.push(candidate);
+    definitions.push(...candidates.map(({ record }) => denormalizeObjectType(record.snapshot)));
     this.validateDefinitionSet(definitions, true);
 
-    return this.store.save({
-      ...current,
-      status: "published",
-      updatedAt: this.clock().toISOString(),
-    }, expectedRevision);
+    const now = this.clock().toISOString();
+    const published: MetadataRecord[] = [];
+    for (const candidate of candidates) {
+      published.push(await this.store.save({
+        ...candidate.record,
+        status: "published",
+        updatedAt: now,
+      }, candidate.expectedRevision));
+    }
+    return published;
   }
 
   async deprecate(objectTypeId: string, version: number, expectedRevision: number): Promise<MetadataRecord> {
