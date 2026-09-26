@@ -61,6 +61,10 @@ export interface RuntimePostureSnapshotStore {
 
 const clone = <T>(value: T): T => structuredClone(value);
 
+function compareSnapshots(left: RuntimePostureSnapshot, right: RuntimePostureSnapshot): number {
+  return left.capturedAt.localeCompare(right.capturedAt) || left.snapshotId.localeCompare(right.snapshotId);
+}
+
 export class MemoryRuntimePostureSnapshotStore implements RuntimePostureSnapshotStore {
   readonly #records = new Map<string, RuntimePostureSnapshot>();
 
@@ -74,7 +78,7 @@ export class MemoryRuntimePostureSnapshotStore implements RuntimePostureSnapshot
       .filter((record) => filter.runtimeId === undefined || record.runtimeId === filter.runtimeId)
       .filter((record) => filter.state === undefined || record.state === filter.state)
       .filter((record) => filter.profileId === undefined || record.profileId === filter.profileId)
-      .sort((left, right) => left.capturedAt.localeCompare(right.capturedAt) || left.snapshotId.localeCompare(right.snapshotId))
+      .sort(compareSnapshots)
       .map(clone);
   }
 
@@ -102,9 +106,9 @@ function deploymentMatchesEvidence(
   deployment: RuntimeDeploymentRecord | null,
   assessment: RuntimeDeploymentDriftAssessment,
 ): boolean {
-  if (!deployment || deployment.status !== "completed") return false;
+  if (!deployment || deployment.status !== "completed" || assessment.deploymentCreatedAt === undefined) return false;
   return deployment.revision === assessment.deploymentRevision
-    && (assessment.deploymentCreatedAt === undefined || deployment.createdAt === assessment.deploymentCreatedAt)
+    && deployment.createdAt === assessment.deploymentCreatedAt
     && deployment.steps.every((step) => step.status === "completed");
 }
 
@@ -126,6 +130,25 @@ function assertEvidenceChain(
     || attestation.toProfileVersion !== baseline.profileVersion
   ) {
     throw new MetadataError("Runtime posture evidence chain contains inconsistent deployment/profile identity.");
+  }
+  if (
+    attestation.deploymentRevision !== baseline.deploymentRevision
+    || assessment.deploymentRevision !== baseline.deploymentRevision
+  ) {
+    throw new MetadataError("Runtime posture evidence chain contains inconsistent deployment revisions.");
+  }
+  if (
+    attestation.deploymentCreatedAt === undefined
+    || baseline.deploymentCreatedAt === undefined
+    || assessment.deploymentCreatedAt === undefined
+  ) {
+    throw new MetadataError("Runtime posture requires deployment creation identity on attestation, baseline and assessment evidence.");
+  }
+  if (
+    attestation.deploymentCreatedAt !== baseline.deploymentCreatedAt
+    || assessment.deploymentCreatedAt !== baseline.deploymentCreatedAt
+  ) {
+    throw new MetadataError("Runtime posture evidence chain contains inconsistent deployment creation identity.");
   }
   if (attestation.outcome === "fail") {
     throw new MetadataError(`Failed attestation '${attestation.attestationId}' cannot support runtime posture.`);
@@ -152,19 +175,30 @@ function caseState(
 ): { state: RuntimePostureState; message: string } {
   if (remediationCase.status === "closed") {
     if (
-      remediationCase.replacementBaselineId !== baseline.baselineId
+      remediationCase.repairDeploymentId !== baseline.deploymentId
+      || remediationCase.repairAttestationId !== baseline.attestationId
+      || remediationCase.replacementBaselineId !== baseline.baselineId
       || remediationCase.closureAssessmentId !== assessment.assessmentId
     ) {
       throw new MetadataError(
         `Closed remediation case '${remediationCase.caseId}' does not close the supplied posture evidence chain.`,
       );
     }
+    if (assessment.outcome !== "clean" || !assessment.checks.every((check) => check.status === "unchanged")) {
+      throw new MetadataError(
+        `Closed remediation case '${remediationCase.caseId}' does not have clean unchanged closure evidence.`,
+      );
+    }
     return { state: "restored", message: "Drift remediation is closed with independently verified clean replacement evidence." };
   }
 
-  if (remediationCase.sourceAssessmentId !== assessment.assessmentId) {
+  if (
+    remediationCase.sourceAssessmentId !== assessment.assessmentId
+    || remediationCase.sourceBaselineId !== baseline.baselineId
+    || remediationCase.sourceDeploymentId !== baseline.deploymentId
+  ) {
     throw new MetadataError(
-      `Open remediation case '${remediationCase.caseId}' does not originate from assessment '${assessment.assessmentId}'.`,
+      `Open remediation case '${remediationCase.caseId}' does not originate from the supplied assessment/baseline/deployment chain.`,
     );
   }
   if (remediationCase.status === "review") {
@@ -204,7 +238,6 @@ export class RuntimePostureCatalog {
     if (!attestation) throw new MetadataError(`Unknown runtime posture attestation '${baseline.attestationId}'.`);
     assertEvidenceChain(attestation, baseline, assessment);
 
-    const deployment = await this.deployments.get(baseline.deploymentId);
     let derived = baseState(assessment);
     let remediationCase: RuntimeDriftRemediationCaseRecord | null = null;
 
@@ -219,6 +252,10 @@ export class RuntimePostureCatalog {
       }
       derived = caseState(remediationCase, baseline, assessment);
     }
+
+    // Read as late as possible so asynchronous evidence/case lookups cannot leave
+    // a clean posture based on a deployment snapshot that changed meanwhile.
+    const deployment = await this.deployments.get(baseline.deploymentId);
 
     // A stale deployment snapshot overrides ordinary clean/warning/drift posture.
     // Active remediation remains visible because the repair may intentionally be
@@ -264,14 +301,27 @@ export class RuntimePostureCatalog {
   async latest(runtimeId: string): Promise<RuntimePostureSnapshot | null> {
     if (!runtimeId.trim()) throw new MetadataError("Runtime posture runtimeId is required.");
     const history = await this.snapshots.list({ runtimeId });
-    return history.length === 0 ? null : clone(history[history.length - 1]!);
+    return history.reduce<RuntimePostureSnapshot | null>(
+      (latest, snapshot) => latest === null || compareSnapshots(snapshot, latest) > 0 ? snapshot : latest,
+      null,
+    );
   }
 
   async history(runtimeId: string): Promise<readonly RuntimePostureSnapshot[]> {
     if (!runtimeId.trim()) throw new MetadataError("Runtime posture runtimeId is required.");
-    return this.snapshots.list({ runtimeId });
+    return [...await this.snapshots.list({ runtimeId })].sort(compareSnapshots);
   }
 }
+
+const validStates = new Set<RuntimePostureState>([
+  "verified",
+  "warning",
+  "drifted",
+  "remediating",
+  "review",
+  "restored",
+  "stale",
+]);
 
 export function validateRuntimePostureSnapshot(snapshot: RuntimePostureSnapshot): void {
   if (snapshot.format !== "nublox-metaobject-runtime-posture" || snapshot.formatVersion !== 1) {
@@ -279,6 +329,10 @@ export function validateRuntimePostureSnapshot(snapshot: RuntimePostureSnapshot)
   }
   if (!snapshot.snapshotId.trim() || !snapshot.runtimeId.trim() || !snapshot.profileId.trim()) {
     throw new MetadataError("Runtime posture snapshot identity fields are required.");
+  }
+  if (!validStates.has(snapshot.state)) throw new MetadataError(`Invalid runtime posture state '${String(snapshot.state)}'.`);
+  if (snapshot.driftOutcome !== "clean" && snapshot.driftOutcome !== "warning" && snapshot.driftOutcome !== "drift") {
+    throw new MetadataError(`Invalid runtime posture drift outcome '${String(snapshot.driftOutcome)}'.`);
   }
   if (!snapshot.deploymentId.trim() || !snapshot.attestationId.trim() || !snapshot.baselineId.trim() || !snapshot.assessmentId.trim()) {
     throw new MetadataError("Runtime posture snapshot evidence references are required.");
