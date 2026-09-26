@@ -27,6 +27,7 @@ export * from "./modules/runtime-deployment-drift.js";
 export * from "./modules/runtime-deployment-execution.js";
 export * from "./modules/runtime-deployment-policy.js";
 export * from "./modules/runtime-deployment-store.js";
+export * from "./modules/runtime-drift-remediation-closure.js";
 export * from "./modules/runtime-drift-remediation.js";
 export * from "./modules/runtime-profile-catalog.js";
 export * from "./modules/runtime-profile-store.js";
