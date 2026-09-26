@@ -14,6 +14,13 @@ export interface ChangeRecord {
   readonly after: unknown;
 }
 
+export interface ObjectEvent {
+  readonly name: string;
+  readonly source: ObjectIdentity;
+  readonly payload: unknown;
+  readonly occurredAt: Date;
+}
+
 export interface RelationshipChangeRecord {
   readonly before: RelationshipValue | undefined;
   readonly after: RelationshipValue | undefined;
