@@ -1,7 +1,7 @@
-import { ConcurrencyError } from "../errors/errors.js";
+import { ConcurrencyError, MetadataError } from "../errors/errors.js";
 import type { ObjectQuery, QueryFilter } from "../query/query.js";
 import type { ObjectIdentity, ObjectSnapshot } from "../runtime/model.js";
-import type { StorageAdapter } from "./storage-adapter.js";
+import type { StorageAdapter, StorageBatchWrite } from "./storage-adapter.js";
 
 const keyOf = (identity: ObjectIdentity): string => `${identity.type}:${identity.id}`;
 const clone = (snapshot: ObjectSnapshot): ObjectSnapshot => structuredClone(snapshot);
@@ -33,27 +33,53 @@ function matches(value: unknown, filter: QueryFilter): boolean {
   }
 }
 
+function applyWrite(store: Map<string, ObjectSnapshot>, write: StorageBatchWrite): ObjectSnapshot {
+  const key = keyOf(write.snapshot);
+  const current = store.get(key);
+  if (write.kind === "insert") {
+    if (current) throw new ConcurrencyError(`Object '${key}' already exists.`);
+    const stored = { ...clone(write.snapshot), version: 1 };
+    store.set(key, stored);
+    return clone(stored);
+  }
+
+  if (!current) throw new ConcurrencyError(`Object '${key}' no longer exists.`);
+  if (current.version !== write.expectedVersion) {
+    throw new ConcurrencyError(
+      `Optimistic concurrency conflict for '${key}': expected version ${write.expectedVersion}, found ${current.version}.`,
+    );
+  }
+  const stored = { ...clone(write.snapshot), version: write.expectedVersion + 1 };
+  store.set(key, stored);
+  return clone(stored);
+}
+
 export class MemoryStorageAdapter implements StorageAdapter {
   readonly #store = new Map<string, ObjectSnapshot>();
 
   async insert(snapshot: ObjectSnapshot): Promise<ObjectSnapshot> {
-    const key = keyOf(snapshot);
-    if (this.#store.has(key)) throw new ConcurrencyError(`Object '${key}' already exists.`);
-    const stored = { ...clone(snapshot), version: 1 };
-    this.#store.set(key, stored);
-    return clone(stored);
+    return applyWrite(this.#store, { kind: "insert", snapshot });
   }
 
   async update(snapshot: ObjectSnapshot, expectedVersion: number): Promise<ObjectSnapshot> {
-    const key = keyOf(snapshot);
-    const current = this.#store.get(key);
-    if (!current) throw new ConcurrencyError(`Object '${key}' no longer exists.`);
-    if (current.version !== expectedVersion) {
-      throw new ConcurrencyError(`Optimistic concurrency conflict for '${key}': expected version ${expectedVersion}, found ${current.version}.`);
+    return applyWrite(this.#store, { kind: "update", snapshot, expectedVersion });
+  }
+
+  async saveBatch(writes: readonly StorageBatchWrite[]): Promise<readonly ObjectSnapshot[]> {
+    const staged = new Map<string, ObjectSnapshot>(
+      [...this.#store.entries()].map(([key, snapshot]) => [key, clone(snapshot)]),
+    );
+    const seen = new Set<string>();
+    const results: ObjectSnapshot[] = [];
+    for (const write of writes) {
+      const key = keyOf(write.snapshot);
+      if (seen.has(key)) throw new MetadataError(`Duplicate object batch write '${key}'.`);
+      seen.add(key);
+      results.push(applyWrite(staged, write));
     }
-    const stored = { ...clone(snapshot), version: expectedVersion + 1 };
-    this.#store.set(key, stored);
-    return clone(stored);
+    this.#store.clear();
+    for (const [key, snapshot] of staged) this.#store.set(key, clone(snapshot));
+    return results.map(clone);
   }
 
   async delete(identity: ObjectIdentity, expectedVersion: number): Promise<void> {
