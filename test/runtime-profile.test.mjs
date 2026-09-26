@@ -150,17 +150,22 @@ test("new runtime profile versions advance and can adopt newer module versions",
     members: [{ objectTypeId: PersonV2.id, version: 2 }],
   }));
 
-  const V2 = defineRuntimeProfile({
+  const V3 = defineRuntimeProfile({
+    ...V1,
+    version: 3,
+    requirements: [{ moduleId: "workforce", minimumVersion: 2 }],
+  });
+  draft = await profiles.saveDraft(V3);
+  const activeV3 = await profiles.activate(V3.id, 3, draft.revision);
+  assert.equal(activeV3.lockfile.roots[0].version, 2);
+  assert.equal((await profiles.latest(V1.id, "active")).profileVersion, 3);
+
+  const skippedV2 = defineRuntimeProfile({
     ...V1,
     version: 2,
     requirements: [{ moduleId: "workforce", minimumVersion: 2 }],
   });
-  draft = await profiles.saveDraft(V2);
-  const activeV2 = await profiles.activate(V2.id, 2, draft.revision);
-  assert.equal(activeV2.lockfile.roots[0].version, 2);
-  assert.equal((await profiles.latest(V1.id, "active")).profileVersion, 2);
-
-  await assert.rejects(() => profiles.saveDraft(defineRuntimeProfile({ ...V1, version: 1 })), /greater than active version 2/);
+  await assert.rejects(() => profiles.saveDraft(skippedV2), /greater than active version 3/);
 });
 
 test("runtime profile bundles validate activated lockfiles before import writes", async () => {
