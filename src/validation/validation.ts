@@ -1,10 +1,10 @@
 import { MetadataError } from "../errors/errors.js";
-import type { ConstraintDefinition, ConstraintSeverity, ObjectConstraintDefinition } from "../metadata/definitions.js";
+import type { ConstraintDefinition, ObjectRuleDefinition } from "../metadata/definitions.js";
 import type { BehaviorRegistry } from "../runtime/behavior-registry.js";
 import type { MetaObject } from "../runtime/meta-object.js";
 import { sameObjectIdentity } from "../runtime/model.js";
 
-export type ValidationSeverity = ConstraintSeverity;
+export type ValidationSeverity = "error" | "warning" | "info";
 
 export interface ValidationIssue {
   readonly code: string;
@@ -21,7 +21,7 @@ export interface ValidationResult {
 export interface ConstraintContext {
   readonly object: MetaObject;
   readonly path: string;
-  readonly definition: ConstraintDefinition | ObjectConstraintDefinition;
+  readonly definition: ConstraintDefinition | ObjectRuleDefinition;
 }
 
 /** Return true/undefined when valid, false for default failure text, or a string for custom failure text. */
@@ -51,7 +51,7 @@ export class ConstraintRegistry {
 
   has(name: string): boolean { return this.#evaluators.has(name); }
 
-  evaluate(value: unknown, context: ConstraintContext): ValidationIssue | null {
+  evaluate(value: unknown, context: ConstraintContext, severity: ValidationSeverity = "error"): ValidationIssue | null {
     const evaluator = this.#evaluators.get(context.definition.type);
     if (!evaluator) throw new MetadataError(`Unknown constraint '${context.definition.type}'.`);
     const result = evaluator(value, context);
@@ -59,12 +59,7 @@ export class ConstraintRegistry {
     const message = typeof result === "string"
       ? result
       : context.definition.message ?? `${context.path} failed constraint '${context.definition.type}'.`;
-    return issue(
-      codeFor(context.definition.type),
-      context.path,
-      context.definition.message ?? message,
-      context.definition.severity ?? "error",
-    );
+    return issue(codeFor(context.definition.type), context.path, context.definition.message ?? message, severity);
   }
 
   private registerBuiltins(): void {
@@ -102,9 +97,10 @@ export class Validator {
   validate(object: MetaObject): ValidationResult {
     this.behaviors?.runObjectHooks(object, "beforeValidate");
     const issues: ValidationIssue[] = [];
+
     for (const [name, attribute] of Object.entries(object.objectType.attributes)) {
-      const value = object.get(name);
       if (attribute.computed) continue;
+      const value = object.get(name);
       if (value === undefined) {
         if (attribute.required) issues.push(issue("REQUIRED", name, `${name} is required.`));
         continue;
@@ -127,17 +123,15 @@ export class Validator {
       }
     }
 
-    for (const constraint of object.objectType.constraints ?? []) {
-      const path = constraint.path ?? "$";
-      const result = this.constraints.evaluate(object.values(), { object, path, definition: constraint });
+    for (const rule of object.objectType.rules ?? []) {
+      const result = this.constraints.evaluate(object.values(), { object, path: rule.id, definition: rule }, rule.severity ?? "error");
       if (result) issues.push(result);
     }
 
     for (const [name, relationship] of Object.entries(object.objectType.relationships ?? {})) {
       const raw = object.getRelationship(name);
       const refs = object.relationshipReferences(name);
-      const empty = refs.length === 0;
-      if (relationship.required && empty) {
+      if (relationship.required && refs.length === 0) {
         issues.push(issue("RELATIONSHIP_REQUIRED", name, `${name} relationship is required.`));
       }
       const many = relationship.cardinality === "one-to-many" || relationship.cardinality === "many-to-many";
@@ -154,6 +148,7 @@ export class Validator {
         }
       }
     }
+
     const result = { valid: !issues.some((entry) => entry.severity === "error"), issues } as const;
     this.behaviors?.runObjectHooks(object, "afterValidate");
     return result;
