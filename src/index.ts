@@ -16,6 +16,7 @@ export * from "./query/query.js";
 export * from "./query/query-engine.js";
 export * from "./query/query-planner.js";
 export * from "./registry/object-type-registry.js";
+export * from "./release/metadata-release-manager.js";
 export * from "./runtime/behavior-registry.js";
 export * from "./runtime/meta-object.js";
 export * from "./runtime/model.js";
