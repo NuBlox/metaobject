@@ -1,5 +1,6 @@
 import type {
   AttributeDefinition,
+  InheritedObjectTypeDefinition,
   ObjectTypeDefinition,
   RelationshipDefinition,
 } from "./definitions.js";
@@ -49,7 +50,7 @@ type OptionalAttributeKeys<D extends ObjectTypeDefinition> = Exclude<
   RequiredAttributeKeys<D>
 >;
 
-export type InferValues<D extends ObjectTypeDefinition> = {
+type InferOwnValues<D extends ObjectTypeDefinition> = {
   [K in RequiredAttributeKeys<D>]: D["attributes"][K] extends AttributeDefinition
     ? InferAttributeValue<D["attributes"][K]>
     : never;
@@ -59,13 +60,16 @@ export type InferValues<D extends ObjectTypeDefinition> = {
     : never;
 };
 
+export type InferValues<D extends ObjectTypeDefinition> =
+  InferOwnValues<D>
+  & (D extends InheritedObjectTypeDefinition<infer B> ? InferValues<B> : unknown);
+
 export type InferRelationshipValue<R extends RelationshipDefinition> =
   R["cardinality"] extends "one-to-many" | "many-to-many"
     ? readonly InferredObjectReference<R["target"]>[]
     : InferredObjectReference<R["target"]>;
 
-type RelationshipMap<D extends ObjectTypeDefinition> =
-  NonNullable<D["relationships"]>;
+type RelationshipMap<D extends ObjectTypeDefinition> = NonNullable<D["relationships"]>;
 
 type RequiredRelationshipKeys<D extends ObjectTypeDefinition> = {
   [K in keyof RelationshipMap<D>]: RelationshipMap<D>[K] extends RelationshipDefinition
@@ -80,8 +84,7 @@ type OptionalRelationshipKeys<D extends ObjectTypeDefinition> = Exclude<
   RequiredRelationshipKeys<D>
 >;
 
-/** Compile-time relationship shape inferred from literal object metadata. */
-export type InferRelationships<D extends ObjectTypeDefinition> = {
+type InferOwnRelationships<D extends ObjectTypeDefinition> = {
   [K in RequiredRelationshipKeys<D>]: RelationshipMap<D>[K] extends RelationshipDefinition
     ? InferRelationshipValue<RelationshipMap<D>[K]>
     : never;
@@ -90,3 +93,8 @@ export type InferRelationships<D extends ObjectTypeDefinition> = {
     ? InferRelationshipValue<RelationshipMap<D>[K]>
     : never;
 };
+
+/** Compile-time relationship shape inferred from literal object metadata. */
+export type InferRelationships<D extends ObjectTypeDefinition> =
+  InferOwnRelationships<D>
+  & (D extends InheritedObjectTypeDefinition<infer B> ? InferRelationships<B> : unknown);
