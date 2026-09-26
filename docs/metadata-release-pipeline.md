@@ -36,6 +36,29 @@ console.log(preparation.artifacts);
 
 Preparation captures the target draft revision. This revision becomes an optimistic release lock: if the draft changes while migration work is running, publication is aborted and must be prepared again.
 
+## Batch releases
+
+Mutually dependent object types must sometimes be activated together. `prepareMany()` and `releaseMany()` coordinate the whole metadata graph while preserving per-type diff and migration plans.
+
+```ts
+const batch = await manager.releaseMany([
+  { objectTypeId: "example.team", targetVersion: 2 },
+  { objectTypeId: "example.person", targetVersion: 3 },
+]);
+```
+
+Batch release:
+
+- rejects duplicate object type ids in the same batch
+- prepares each target against its own latest published version
+- aggregates generated artifacts
+- aggregates blocking migration work and breaking-change review requirements
+- executes blocking migration steps in deterministic request/plan order
+- rechecks every draft revision before publication
+- calls `MetadataCatalog.publishMany()` so bidirectional relationships and other cross-type dependencies are validated as one runtime graph
+
+This is required for first publication of mutually referencing schemas where publishing either member alone would fail relationship validation.
+
 ## Compatible upgrades
 
 Compatible schema changes can publish without a migration executor:
@@ -80,7 +103,7 @@ Explicit approval does not bypass other blocking migration work. If the plan als
 
 ## Concurrency protection
 
-The manager performs this sequence:
+The manager performs this sequence for every release target:
 
 ```text
 Read draft revision
@@ -95,12 +118,12 @@ Build migration plan
 Execute blocking migration steps
       │
       ▼
-Re-read draft revision
+Re-read every draft revision
       │
-      ├── changed -> ABORT
+      ├── any changed -> ABORT BATCH
       │
       ▼
-Publish exact prepared revision
+Publish exact prepared revision(s)
 ```
 
 This prevents a migration calculated for one draft from publishing a different draft that changed during the release window.
