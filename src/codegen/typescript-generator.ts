@@ -68,21 +68,50 @@ function interfaceLines(
   return lines;
 }
 
+function createInputLines(
+  definition: ObjectTypeDefinition,
+  typeName: string,
+  includeComputed: boolean,
+): string[] {
+  const lines = [`export interface ${typeName} {`];
+  for (const [name, attribute] of Object.entries(definition.attributes)) {
+    if (attribute.computed && !includeComputed) continue;
+    const required = attribute.required && attribute.default === undefined;
+    lines.push(`  ${propertyName(name)}${required ? "" : "?"}: ${attributeType(attribute)};`);
+  }
+  lines.push("}");
+  return lines;
+}
+
+function modelClassLines(definition: ObjectTypeDefinition, typeName: string): string[] {
+  return [
+    `export class ${typeName}Model {`,
+    `  static readonly objectTypeId = ${JSON.stringify(definition.id)} as const;`,
+    `  static readonly schemaVersion = ${definition.version} as const;`,
+    `  readonly values: Readonly<${typeName}>;`,
+    "",
+    `  constructor(values: ${typeName}) {`,
+    "    this.values = Object.freeze({ ...values });",
+    "    Object.freeze(this);",
+    "  }",
+    "}",
+  ];
+}
+
 /** Generate the primary value interface for one metadata definition. */
 export function generateTypeScriptInterface(
   definition: ObjectTypeDefinition,
   options: TypeScriptGenerationOptions = {},
 ): string {
   const typeName = identifier(options.typeName ?? definition.name);
-  const lines = [
+  return [
     "export interface ObjectReference<TType extends string = string> {",
     "  readonly id: string;",
     "  readonly type: TType;",
     "}",
     "",
     ...interfaceLines(definition, typeName, options.relationships !== false),
-  ];
-  return lines.join("\n");
+  ].join("\n");
 }
 
 /** Generate a create-input interface excluding computed values by default. */
@@ -90,45 +119,28 @@ export function generateTypeScriptCreateInput(
   definition: ObjectTypeDefinition,
   options: TypeScriptGenerationOptions = {},
 ): string {
-  const typeName = `${identifier(options.typeName ?? definition.name)}CreateInput`;
-  const lines = [`export interface ${typeName} {`];
-  for (const [name, attribute] of Object.entries(definition.attributes)) {
-    if (attribute.computed && options.computedInputs !== true) continue;
-    const required = attribute.required && attribute.default === undefined;
-    lines.push(`  ${propertyName(name)}${required ? "" : "?"}: ${attributeType(attribute)};`);
-  }
-  lines.push("}");
-  return lines.join("\n");
+  return createInputLines(
+    definition,
+    `${identifier(options.typeName ?? definition.name)}CreateInput`,
+    options.computedInputs === true,
+  ).join("\n");
 }
 
-/**
- * Generate a small immutable data class for consumers that prefer classes over
- * structural interfaces. Runtime MetaObject behaviour remains in the core runtime.
- */
+/** Generate a typed immutable wrapper class for a metadata-defined value. */
 export function generateTypeScriptClass(
   definition: ObjectTypeDefinition,
   options: TypeScriptGenerationOptions = {},
 ): string {
   const typeName = identifier(options.typeName ?? definition.name);
-  const className = `${typeName}Model`;
-  const valueInterface = interfaceLines(definition, typeName, options.relationships !== false).join("\n");
   return [
     "export interface ObjectReference<TType extends string = string> {",
     "  readonly id: string;",
     "  readonly type: TType;",
     "}",
     "",
-    valueInterface,
+    ...interfaceLines(definition, typeName, options.relationships !== false),
     "",
-    `export class ${className} implements ${typeName} {`,
-    `  static readonly objectTypeId = ${JSON.stringify(definition.id)} as const;`,
-    `  static readonly schemaVersion = ${definition.version} as const;`,
-    "",
-    `  constructor(values: ${typeName}) {`,
-    "    Object.assign(this, values);",
-    "    Object.freeze(this);",
-    "  }",
-    "}",
+    ...modelClassLines(definition, typeName),
   ].join("\n");
 }
 
@@ -138,8 +150,7 @@ export function generateTypeScriptModule(
   options: TypeScriptGenerationOptions = {},
 ): string {
   const typeName = identifier(options.typeName ?? definition.name);
-  const createInputName = `${typeName}CreateInput`;
-  const lines = [
+  return [
     "export interface ObjectReference<TType extends string = string> {",
     "  readonly id: string;",
     "  readonly type: TType;",
@@ -147,25 +158,8 @@ export function generateTypeScriptModule(
     "",
     ...interfaceLines(definition, typeName, options.relationships !== false),
     "",
-    `export interface ${createInputName} {`,
-  ];
-  for (const [name, attribute] of Object.entries(definition.attributes)) {
-    if (attribute.computed && options.computedInputs !== true) continue;
-    const required = attribute.required && attribute.default === undefined;
-    lines.push(`  ${propertyName(name)}${required ? "" : "?"}: ${attributeType(attribute)};`);
-  }
-  lines.push(
-    "}",
+    ...createInputLines(definition, `${typeName}CreateInput`, options.computedInputs === true),
     "",
-    `export class ${typeName}Model implements ${typeName} {`,
-    `  static readonly objectTypeId = ${JSON.stringify(definition.id)} as const;`,
-    `  static readonly schemaVersion = ${definition.version} as const;`,
-    "",
-    `  constructor(values: ${typeName}) {`,
-    "    Object.assign(this, values);",
-    "    Object.freeze(this);",
-    "  }",
-    "}",
-  );
-  return lines.join("\n");
+    ...modelClassLines(definition, typeName),
+  ].join("\n");
 }
