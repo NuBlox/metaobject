@@ -1,8 +1,9 @@
 import { ConcurrencyError } from "../errors/errors.js";
-import type {
-  RuntimeDeploymentRecord,
-  RuntimeDeploymentRecordFilter,
-  RuntimeDeploymentStore,
+import {
+  validateRuntimeDeploymentJournal,
+  type RuntimeDeploymentRecord,
+  type RuntimeDeploymentRecordFilter,
+  type RuntimeDeploymentStore,
 } from "./runtime-deployment-store.js";
 
 function clone(record: RuntimeDeploymentRecord): RuntimeDeploymentRecord {
@@ -26,6 +27,7 @@ export class MemoryRuntimeDeploymentStore implements RuntimeDeploymentStore {
   }
 
   async save(record: RuntimeDeploymentRecord, expectedRevision?: number): Promise<RuntimeDeploymentRecord> {
+    validateRuntimeDeploymentJournal(record);
     const current = this.#records.get(record.deploymentId);
     if (current) {
       if (expectedRevision === undefined) {

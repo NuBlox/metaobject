@@ -295,6 +295,11 @@ export class RuntimeDeploymentRunner {
     };
     const reconciliation = await executor.reconcile!(context);
     if (reconciliation.resolution === "unknown") {
+      record = await this.deployments.recordUnknownReconciliation(
+        record.deploymentId,
+        step.id,
+        record.revision,
+      );
       return { record, executedSteps: 0, blockedReason: "reconciliation-unknown" };
     }
     record = await this.deployments.recoverStep(

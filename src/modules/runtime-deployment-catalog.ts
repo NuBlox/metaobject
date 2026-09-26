@@ -1,10 +1,12 @@
 import { MetadataError } from "../errors/errors.js";
 import type { RuntimeProfileUpgradePlan, RuntimeProfileUpgradeStep } from "./runtime-profile-upgrade.js";
-import type {
-  RuntimeDeploymentRecord,
-  RuntimeDeploymentStepEvidence,
-  RuntimeDeploymentStepState,
-  RuntimeDeploymentStore,
+import {
+  appendRuntimeDeploymentJournal,
+  type RuntimeDeploymentJournalEntry,
+  type RuntimeDeploymentRecord,
+  type RuntimeDeploymentStepEvidence,
+  type RuntimeDeploymentStepState,
+  type RuntimeDeploymentStore,
 } from "./runtime-deployment-store.js";
 
 export type RuntimeDeploymentClock = () => Date;
@@ -66,6 +68,10 @@ export class RuntimeDeploymentCatalog {
       toProfileVersion,
       plan: structuredClone(plan),
       steps: plan.steps.map((step) => ({ stepId: step.id, status: "pending", attempts: 0 })),
+      journal: appendRuntimeDeploymentJournal(
+        { journal: [] },
+        { kind: "deployment-created", occurredAt: now },
+      ),
       createdAt: now,
       updatedAt: now,
     });
@@ -75,6 +81,11 @@ export class RuntimeDeploymentCatalog {
     return this.store.get(deploymentId);
   }
 
+  async journal(deploymentId: string): Promise<readonly RuntimeDeploymentJournalEntry[]> {
+    const record = await this.requireRecord(deploymentId);
+    return structuredClone(record.journal ?? []);
+  }
+
   /** Record the explicit operator approval required by a breaking/manual-review plan. */
   async approve(deploymentId: string, expectedRevision: number): Promise<RuntimeDeploymentRecord> {
     const current = await this.requireRecord(deploymentId);
@@ -82,7 +93,12 @@ export class RuntimeDeploymentCatalog {
       throw new MetadataError(`Runtime deployment '${deploymentId}' must be planned before approval.`);
     }
     const now = this.clock().toISOString();
-    return this.store.save({ ...current, approvedAt: now, updatedAt: now }, expectedRevision);
+    return this.store.save({
+      ...current,
+      approvedAt: now,
+      journal: appendRuntimeDeploymentJournal(current, { kind: "deployment-approved", occurredAt: now }),
+      updatedAt: now,
+    }, expectedRevision);
   }
 
   async start(deploymentId: string, expectedRevision: number): Promise<RuntimeDeploymentRecord> {
@@ -100,10 +116,21 @@ export class RuntimeDeploymentCatalog {
         status: "completed",
         startedAt: now,
         completedAt: now,
+        journal: appendRuntimeDeploymentJournal(
+          current,
+          { kind: "deployment-started", occurredAt: now },
+          { kind: "deployment-completed", occurredAt: now },
+        ),
         updatedAt: now,
       }, expectedRevision);
     }
-    return this.store.save({ ...current, status: "running", startedAt: now, updatedAt: now }, expectedRevision);
+    return this.store.save({
+      ...current,
+      status: "running",
+      startedAt: now,
+      journal: appendRuntimeDeploymentJournal(current, { kind: "deployment-started", occurredAt: now }),
+      updatedAt: now,
+    }, expectedRevision);
   }
 
   /**
@@ -160,6 +187,14 @@ export class RuntimeDeploymentCatalog {
     const record = await this.store.save({
       ...current,
       steps: replaceStep(current.steps, pending.stepId, nextState),
+      journal: appendRuntimeDeploymentJournal(current, {
+        kind: "step-leased",
+        occurredAt: now,
+        stepId: pending.stepId,
+        attempt: nextState.attempts,
+        ...(executorId === undefined ? {} : { executorId }),
+        ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+      }),
       updatedAt: now,
     }, expectedRevision);
     return { record, step: structuredClone(definition) };
@@ -186,10 +221,23 @@ export class RuntimeDeploymentCatalog {
       ...(evidence === undefined ? {} : { evidence: structuredClone(evidence) }),
     });
     const complete = steps.every((step) => step.status === "completed");
+    const journalEvents = [
+      {
+        kind: "step-completed" as const,
+        occurredAt: now,
+        stepId,
+        attempt: state.attempts,
+        ...(state.executorId === undefined ? {} : { executorId: state.executorId }),
+        ...(state.idempotencyKey === undefined ? {} : { idempotencyKey: state.idempotencyKey }),
+        ...(evidence === undefined ? {} : { evidence: structuredClone(evidence) }),
+      },
+      ...(complete ? [{ kind: "deployment-completed" as const, occurredAt: now }] : []),
+    ];
     return this.store.save({
       ...current,
       status: complete ? "completed" : "running",
       steps,
+      journal: appendRuntimeDeploymentJournal(current, ...journalEvents),
       ...(complete ? { completedAt: now } : {}),
       updatedAt: now,
     }, expectedRevision);
@@ -216,6 +264,16 @@ export class RuntimeDeploymentCatalog {
         ...state,
         status: "failed",
         lastError: error,
+        ...(evidence === undefined ? {} : { evidence: structuredClone(evidence) }),
+      }),
+      journal: appendRuntimeDeploymentJournal(current, {
+        kind: "step-failed",
+        occurredAt: now,
+        stepId,
+        attempt: state.attempts,
+        error,
+        ...(state.executorId === undefined ? {} : { executorId: state.executorId }),
+        ...(state.idempotencyKey === undefined ? {} : { idempotencyKey: state.idempotencyKey }),
         ...(evidence === undefined ? {} : { evidence: structuredClone(evidence) }),
       }),
       updatedAt: now,
@@ -260,11 +318,66 @@ export class RuntimeDeploymentCatalog {
         };
     const steps = replaceStep(current.steps, stepId, recovered);
     const complete = steps.every((step) => step.status === "completed");
+    const recoveryEvent = resolution === "retry"
+      ? {
+          kind: "step-retry-requested" as const,
+          occurredAt: now,
+          stepId,
+          attempt: state.attempts,
+          recoveryResolution: "retry" as const,
+          ...(state.executorId === undefined ? {} : { executorId: state.executorId }),
+          ...(state.idempotencyKey === undefined ? {} : { idempotencyKey: state.idempotencyKey }),
+        }
+      : {
+          kind: "step-recovered-completed" as const,
+          occurredAt: now,
+          stepId,
+          attempt: state.attempts,
+          recoveryResolution: "completed" as const,
+          ...(state.executorId === undefined ? {} : { executorId: state.executorId }),
+          ...(state.idempotencyKey === undefined ? {} : { idempotencyKey: state.idempotencyKey }),
+          ...(evidence === undefined ? {} : { evidence: structuredClone(evidence) }),
+        };
     return this.store.save({
       ...current,
       status: complete ? "completed" : "running",
       steps,
+      journal: appendRuntimeDeploymentJournal(
+        current,
+        recoveryEvent,
+        ...(complete ? [{ kind: "deployment-completed" as const, occurredAt: now }] : []),
+      ),
       ...(complete ? { completedAt: now } : {}),
+      updatedAt: now,
+    }, expectedRevision);
+  }
+
+  /** Record a reconciler's explicit inability to determine an external outcome. */
+  async recordUnknownReconciliation(
+    deploymentId: string,
+    stepId: string,
+    expectedRevision: number,
+  ): Promise<RuntimeDeploymentRecord> {
+    const current = await this.requireRecord(deploymentId);
+    if (current.status !== "running" && current.status !== "failed") {
+      throw new MetadataError(`Runtime deployment '${deploymentId}' is not reconcilable from status '${current.status}'.`);
+    }
+    const state = this.requireStep(current, stepId);
+    if (state.status !== "running" && state.status !== "failed") {
+      throw new MetadataError(`Runtime deployment step '${stepId}' is not running or failed.`);
+    }
+    const now = this.clock().toISOString();
+    return this.store.save({
+      ...current,
+      journal: appendRuntimeDeploymentJournal(current, {
+        kind: "step-reconciliation-unknown",
+        occurredAt: now,
+        stepId,
+        attempt: state.attempts,
+        recoveryResolution: "unknown",
+        ...(state.executorId === undefined ? {} : { executorId: state.executorId }),
+        ...(state.idempotencyKey === undefined ? {} : { idempotencyKey: state.idempotencyKey }),
+      }),
       updatedAt: now,
     }, expectedRevision);
   }
@@ -280,6 +393,7 @@ export class RuntimeDeploymentCatalog {
       ...current,
       status: "cancelled",
       cancelledAt: now,
+      journal: appendRuntimeDeploymentJournal(current, { kind: "deployment-cancelled", occurredAt: now }),
       updatedAt: now,
     }, expectedRevision);
   }
