@@ -113,6 +113,8 @@ Relationship metadata supports:
 
 Ownership is descriptive and does not implicitly delete objects. Lifecycle propagation is controlled explicitly with `onSourceDelete` and `onTargetDelete`, preventing accidental cascades.
 
+M2 adds single inheritance and semantic relationship kinds. `ObjectTypeRegistry.resolve()` flattens inherited metadata, `isA()` drives subtype assignment, and `defineDerivedObjectType()` preserves inherited compile-time shapes. Composition adds exclusive parentage and source-owned lifecycle cascade. See `docs/inheritance-composition.md`.
+
 `MetaObjectRepository` validates persisted references by default. New cyclic or bidirectional object graphs can be persisted through `saveAll()`, which treats references between objects in the same batch as valid:
 
 ```ts
@@ -178,6 +180,13 @@ The standalone kernel now includes:
 - batch persistence for cyclic graphs
 - explicit detach/restrict/cascade delete semantics
 - compile-time relationship inference
+- resolved single inheritance and type lineage
+- abstract and sealed object semantics
+- compile-time derived metadata inference
+- polymorphic relationship assignment
+- aggregation/composition relationship kinds
+- exclusive composite-parent enforcement
+- composition lifecycle cascade
 
 ## Roadmap
 
@@ -185,9 +194,9 @@ The standalone kernel now includes:
 
 Implemented: inverse synchronization, referential integrity, ownership metadata, collection mutation, graph navigation, batch persistence and delete policies.
 
-### M2 — Inheritance and composition
+### M2 — Inheritance and composition ✅
 
-Base object types, inherited attributes, sealed/abstract types and metadata resolution.
+Implemented: resolved base types, inherited attributes/relationships/indexes/defaults, abstract/sealed semantics, lineage/type queries, subtype-compatible relationships, compile-time derived metadata inference and exclusive composition lifecycle rules.
 
 ### M3 — Constraint and behaviour registry
 
