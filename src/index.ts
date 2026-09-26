@@ -6,6 +6,7 @@ export * from "./query/query.js";
 export * from "./registry/object-type-registry.js";
 export * from "./runtime/meta-object.js";
 export * from "./runtime/model.js";
+export * from "./runtime/object-graph.js";
 export * from "./runtime/object-factory.js";
 export * from "./storage/memory-storage-adapter.js";
 export * from "./storage/repository.js";
