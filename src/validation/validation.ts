@@ -1,5 +1,6 @@
 import type { ConstraintDefinition } from "../metadata/definitions.js";
 import type { MetaObject } from "../runtime/meta-object.js";
+import { sameObjectIdentity } from "../runtime/model.js";
 
 export type ValidationSeverity = "error" | "warning" | "info";
 
@@ -80,10 +81,39 @@ export class Validator {
         }
       }
     }
+
     for (const [name, relationship] of Object.entries(object.objectType.relationships ?? {})) {
-      const value = object.getRelationship(name);
-      const empty = value === undefined || (Array.isArray(value) && value.length === 0);
-      if (relationship.required && empty) issues.push(issue("RELATIONSHIP_REQUIRED", name, `${name} relationship is required.`));
+      const raw = object.getRelationship(name);
+      const refs = object.relationshipReferences(name);
+      const empty = refs.length === 0;
+      if (relationship.required && empty) {
+        issues.push(issue("RELATIONSHIP_REQUIRED", name, `${name} relationship is required.`));
+      }
+      const many = relationship.cardinality === "one-to-many" || relationship.cardinality === "many-to-many";
+      if (raw !== undefined && many !== Array.isArray(raw)) {
+        issues.push(issue(
+          "RELATIONSHIP_CARDINALITY",
+          name,
+          `${name} relationship does not match cardinality '${relationship.cardinality}'.`,
+        ));
+      }
+      for (let index = 0; index < refs.length; index += 1) {
+        const ref = refs[index]!;
+        if (ref.type !== relationship.target) {
+          issues.push(issue(
+            "RELATIONSHIP_TARGET_TYPE",
+            `${name}[${index}]`,
+            `${name} requires target type '${relationship.target}', received '${ref.type}'.`,
+          ));
+        }
+        if (refs.slice(0, index).some((other) => sameObjectIdentity(other, ref))) {
+          issues.push(issue(
+            "RELATIONSHIP_DUPLICATE_TARGET",
+            `${name}[${index}]`,
+            `${name} contains duplicate target '${ref.type}:${ref.id}'.`,
+          ));
+        }
+      }
     }
     return { valid: issues.length === 0, issues };
   }
