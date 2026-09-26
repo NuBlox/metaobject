@@ -56,7 +56,7 @@ function completeTuple(values: readonly unknown[]): boolean {
 export class MetaObjectRepository {
   readonly #enforceReferentialIntegrity: boolean;
   readonly #enforceUniqueness: boolean;
-  readonly #behaviors?: BehaviorRegistry;
+  readonly #behaviors: BehaviorRegistry | undefined;
 
   constructor(
     private readonly storage: StorageAdapter,
