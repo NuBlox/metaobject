@@ -72,6 +72,48 @@ test("module registry rejects invalid definitions and dependency cycles", () => 
   assert.throws(() => modules.resolve("a", 1), /dependency cycle/);
 });
 
+test("module registry rejects conflicting versions of one dependency in a diamond graph", () => {
+  const modules = new MetadataModuleRegistry();
+  modules.register(defineMetadataModule({
+    id: "foundation",
+    name: "Foundation",
+    version: 1,
+    members: [{ objectTypeId: "example.foundation-v1", version: 1 }],
+  }));
+  modules.register(defineMetadataModule({
+    id: "foundation",
+    name: "Foundation",
+    version: 2,
+    members: [{ objectTypeId: "example.foundation-v2", version: 1 }],
+  }));
+  modules.register(defineMetadataModule({
+    id: "left",
+    name: "Left",
+    version: 1,
+    dependencies: [{ moduleId: "foundation", minimumVersion: 2 }],
+    members: [{ objectTypeId: "example.left", version: 1 }],
+  }));
+  modules.register(defineMetadataModule({
+    id: "right",
+    name: "Right",
+    version: 1,
+    dependencies: [{ moduleId: "foundation", maximumVersion: 1 }],
+    members: [{ objectTypeId: "example.right", version: 1 }],
+  }));
+  modules.register(defineMetadataModule({
+    id: "root",
+    name: "Root",
+    version: 1,
+    dependencies: [
+      { moduleId: "left", minimumVersion: 1 },
+      { moduleId: "right", minimumVersion: 1 },
+    ],
+    members: [{ objectTypeId: "example.root", version: 1 }],
+  }));
+
+  assert.throws(() => modules.resolve("root", 1), /version conflict.*foundation/i);
+});
+
 test("module release requires dependency module members to be published", async () => {
   const { catalog, modules, moduleReleases } = setup();
   const Person = defineObjectType({
