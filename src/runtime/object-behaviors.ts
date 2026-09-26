@@ -1,9 +1,17 @@
 import { MetadataError } from "../errors/errors.js";
+import type { AttributeDefinition } from "../metadata/definitions.js";
 import type { TypeRegistry } from "../types/type-registry.js";
 import { BehaviorRegistry, EventBus } from "./behavior-registry.js";
 import type { MetaObject } from "./meta-object.js";
 
+interface CachedComputedValue {
+  readonly token: string;
+  readonly value: unknown;
+}
+
 export class ObjectBehaviorRuntime {
+  readonly #computedCache = new WeakMap<MetaObject, Map<string, CachedComputedValue>>();
+
   constructor(
     readonly behaviors: BehaviorRegistry,
     private readonly types: TypeRegistry,
@@ -16,21 +24,32 @@ export class ObjectBehaviorRuntime {
     if (!definition) throw new MetadataError(`Unknown attribute '${object.objectType.id}.${attribute}'.`);
     if (!definition.computed) return object.get(attribute);
 
-    const value = this.behaviors.compute(definition.computed.resolver, { object, attribute });
-    if (value === null) {
-      if (!definition.nullable) throw new TypeError(`Computed attribute '${attribute}' does not allow null.`);
-      return value;
+    const token = definition.computed.cache ? this.cacheToken(object) : undefined;
+    if (token !== undefined) {
+      const cached = this.#computedCache.get(object)?.get(attribute);
+      if (cached?.token === token) return cached.value;
     }
-    if (value === undefined) return value;
-    const type = this.types.get(definition.type);
-    if (definition.multiple) {
-      if (!Array.isArray(value) || !value.every((item) => type.validate(item))) {
-        throw new TypeError(`Computed attribute '${attribute}' must return an array of '${definition.type}' values.`);
+
+    const value = this.behaviors.compute(definition.computed.resolver, { object, attribute });
+    this.assertComputedValue(attribute, definition, value);
+    if (token !== undefined) {
+      let cache = this.#computedCache.get(object);
+      if (!cache) {
+        cache = new Map<string, CachedComputedValue>();
+        this.#computedCache.set(object, cache);
       }
-    } else if (!type.validate(value)) {
-      throw new TypeError(`Computed attribute '${attribute}' must return type '${definition.type}'.`);
+      cache.set(attribute, { token, value });
     }
     return value;
+  }
+
+  /** Remove cached computed values for an object explicitly. */
+  invalidate(object: MetaObject, attribute?: string): void {
+    if (attribute === undefined) {
+      this.#computedCache.delete(object);
+      return;
+    }
+    this.#computedCache.get(object)?.delete(attribute);
   }
 
   /** Invoke a metadata-declared operation through its registered runtime behaviour. */
@@ -46,5 +65,32 @@ export class ObjectBehaviorRuntime {
       throw new MetadataError(`Unknown event '${object.objectType.id}.${name}'.`);
     }
     this.events.emit({ object, name, payload, occurredAt: new Date() });
+  }
+
+  private cacheToken(object: MetaObject): string {
+    return JSON.stringify([
+      object.version,
+      object.state,
+      object.changedAttributes(),
+      object.changedRelationships(),
+    ]);
+  }
+
+  private assertComputedValue(attribute: string, definition: AttributeDefinition, value: unknown): void {
+    if (value === null) {
+      if (!definition.nullable) throw new TypeError(`Computed attribute '${attribute}' does not allow null.`);
+      return;
+    }
+    if (value === undefined) return;
+    const type = this.types.get(definition.type);
+    if (definition.multiple) {
+      if (!Array.isArray(value) || !value.every((item) => type.validate(item))) {
+        throw new TypeError(`Computed attribute '${attribute}' must return an array of '${definition.type}' values.`);
+      }
+      return;
+    }
+    if (!type.validate(value)) {
+      throw new TypeError(`Computed attribute '${attribute}' must return type '${definition.type}'.`);
+    }
   }
 }
