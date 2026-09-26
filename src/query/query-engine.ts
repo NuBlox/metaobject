@@ -223,7 +223,7 @@ export class QueryEngine {
 
   private extreme(values: readonly unknown[], maximum: boolean): number | string | null {
     if (values.length === 0) return null;
-    let selected = values[0]!;
+    let selected: unknown = values[0];
     for (const value of values.slice(1)) {
       const compared = compareScalar(value, selected);
       if ((maximum && compared > 0) || (!maximum && compared < 0)) selected = value;
