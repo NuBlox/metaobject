@@ -6,6 +6,15 @@ export type RelationshipCardinality =
 
 export type RelationshipOwnership = "none" | "source" | "target";
 
+/**
+ * Action applied when an object participating in a relationship is deleted.
+ *
+ * - restrict: deletion is rejected while the relationship exists.
+ * - cascade:  deletion propagates across the relationship.
+ * - detach:   the relationship is removed and the other object is retained.
+ */
+export type ReferentialAction = "restrict" | "cascade" | "detach";
+
 export interface ConstraintDefinition {
   readonly type: "minLength" | "maxLength" | "range" | "pattern";
   readonly minimum?: number;
@@ -28,11 +37,29 @@ export interface AttributeDefinition {
 }
 
 export interface RelationshipDefinition {
+  /** Object type accepted by this relationship. */
   readonly target: string;
+
+  /** Cardinality as observed from the source object. */
   readonly cardinality: RelationshipCardinality;
+
+  /** Whether at least one target is required. */
   readonly required?: boolean;
+
+  /** Name of the relationship on the target object that points back to the source. */
   readonly inverse?: string;
+
+  /** Which end conceptually owns the relationship. */
   readonly ownership?: RelationshipOwnership;
+
+  /** Whether target order is semantically significant for to-many relationships. */
+  readonly ordered?: boolean;
+
+  /** Policy when the source object is deleted. Defaults to detach. */
+  readonly onSourceDelete?: ReferentialAction;
+
+  /** Policy when a referenced target object is deleted. Defaults to detach. */
+  readonly onTargetDelete?: ReferentialAction;
 }
 
 export interface IndexAttributeDefinition {

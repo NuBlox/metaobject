@@ -1,6 +1,6 @@
 {
   "name": "@nublox/metaobject",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Standalone metadata-driven object model and runtime for TypeScript.",
   "type": "module",
   "sideEffects": false,
@@ -13,7 +13,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json",
@@ -21,6 +24,10 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "check": "npm run typecheck && npm test"
   },
-  "devDependencies": {"typescript": "^5.8.3"},
-  "engines": {"node": ">=20"}
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

@@ -1,5 +1,12 @@
 import { MetadataError, ObjectTypeNotFoundError } from "../errors/errors.js";
-import type { AttributeDefinition, ConstraintDefinition, ObjectTypeDefinition } from "../metadata/definitions.js";
+import type {
+  AttributeDefinition,
+  ConstraintDefinition,
+  ObjectTypeDefinition,
+  RelationshipCardinality,
+  RelationshipDefinition,
+  RelationshipOwnership,
+} from "../metadata/definitions.js";
 import type { TypeRegistry } from "../types/type-registry.js";
 
 function validateConstraint(attributeName: string, constraint: ConstraintDefinition): void {
@@ -31,6 +38,33 @@ function validateAttribute(name: string, attribute: AttributeDefinition, types: 
   for (const constraint of attribute.constraints ?? []) validateConstraint(name, constraint);
 }
 
+function expectedInverseCardinality(cardinality: RelationshipCardinality): RelationshipCardinality {
+  switch (cardinality) {
+    case "one-to-one": return "one-to-one";
+    case "one-to-many": return "many-to-one";
+    case "many-to-one": return "one-to-many";
+    case "many-to-many": return "many-to-many";
+  }
+}
+
+function expectedInverseOwnership(ownership: RelationshipOwnership): RelationshipOwnership {
+  switch (ownership) {
+    case "source": return "target";
+    case "target": return "source";
+    case "none": return "none";
+  }
+}
+
+function validateRelationshipShape(ownerId: string, name: string, relationship: RelationshipDefinition): void {
+  if (!relationship.target.trim()) {
+    throw new MetadataError(`${ownerId}.${name}: relationship target is required.`);
+  }
+  const many = relationship.cardinality === "one-to-many" || relationship.cardinality === "many-to-many";
+  if (relationship.ordered && !many) {
+    throw new MetadataError(`${ownerId}.${name}: 'ordered' is only valid for to-many relationships.`);
+  }
+}
+
 export class ObjectTypeRegistry {
   readonly #definitions = new Map<string, ObjectTypeDefinition>();
 
@@ -47,6 +81,9 @@ export class ObjectTypeRegistry {
     }
     for (const [name, attribute] of Object.entries(definition.attributes)) {
       validateAttribute(name, attribute, this.types);
+    }
+    for (const [name, relationship] of Object.entries(definition.relationships ?? {})) {
+      validateRelationshipShape(definition.id, name, relationship);
     }
     for (const index of definition.indexes ?? []) {
       for (const item of index.attributes) {
@@ -77,8 +114,59 @@ export class ObjectTypeRegistry {
   validateRelationships(): void {
     for (const definition of this.#definitions.values()) {
       for (const [name, relationship] of Object.entries(definition.relationships ?? {})) {
-        if (!this.#definitions.has(relationship.target)) {
+        const target = this.#definitions.get(relationship.target);
+        if (!target) {
           throw new MetadataError(`${definition.id}.${name}: unknown target object type '${relationship.target}'.`);
+        }
+        if (!relationship.inverse) continue;
+
+        const inverse = target.relationships?.[relationship.inverse];
+        if (!inverse) {
+          throw new MetadataError(
+            `${definition.id}.${name}: inverse '${relationship.target}.${relationship.inverse}' does not exist.`,
+          );
+        }
+        if (inverse.target !== definition.id) {
+          throw new MetadataError(
+            `${definition.id}.${name}: inverse '${relationship.target}.${relationship.inverse}' targets '${inverse.target}' instead of '${definition.id}'.`,
+          );
+        }
+        const expectedCardinality = expectedInverseCardinality(relationship.cardinality);
+        if (inverse.cardinality !== expectedCardinality) {
+          throw new MetadataError(
+            `${definition.id}.${name}: inverse cardinality must be '${expectedCardinality}', received '${inverse.cardinality}'.`,
+          );
+        }
+        if (inverse.inverse !== undefined && inverse.inverse !== name) {
+          throw new MetadataError(
+            `${definition.id}.${name}: inverse '${relationship.target}.${relationship.inverse}' points back to '${inverse.inverse}' instead of '${name}'.`,
+          );
+        }
+        if (relationship.ownership !== undefined && inverse.ownership !== undefined) {
+          const expectedOwnership = expectedInverseOwnership(relationship.ownership);
+          if (inverse.ownership !== expectedOwnership) {
+            throw new MetadataError(
+              `${definition.id}.${name}: inverse ownership must be '${expectedOwnership}', received '${inverse.ownership}'.`,
+            );
+          }
+        }
+        if (
+          relationship.onSourceDelete !== undefined
+          && inverse.onTargetDelete !== undefined
+          && relationship.onSourceDelete !== inverse.onTargetDelete
+        ) {
+          throw new MetadataError(
+            `${definition.id}.${name}: onSourceDelete must match inverse onTargetDelete.`,
+          );
+        }
+        if (
+          relationship.onTargetDelete !== undefined
+          && inverse.onSourceDelete !== undefined
+          && relationship.onTargetDelete !== inverse.onSourceDelete
+        ) {
+          throw new MetadataError(
+            `${definition.id}.${name}: onTargetDelete must match inverse onSourceDelete.`,
+          );
         }
       }
     }
