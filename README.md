@@ -9,7 +9,7 @@ A standalone, application-agnostic metadata-driven object model and runtime for 
 - **Metadata is the source of truth.** Object definitions describe attributes, types, relationships, constraints and indexes.
 - **Compile-time and runtime models coexist.** Metadata declared with `as const` can infer TypeScript value shapes; metadata loaded from JSON or a database receives the same runtime validation.
 - **Storage is pluggable.** The core package exposes a storage contract rather than embedding MySQL, PostgreSQL or another database.
-- **Relationships are first-class.** Object relationships are distinct from primitive attributes.
+- **Relationships are first-class.** Object relationships are distinct from primitive attributes and can be coordinated bidirectionally through `ObjectGraph`.
 - **Type systems are extensible.** Applications can register additional attribute types without changing the kernel.
 - **Optimistic concurrency is part of the object contract.** Storage adapters enforce version checks consistently.
 
@@ -85,6 +85,40 @@ new -> clean -> dirty -> clean
 
 `detached` is also available for objects intentionally removed from a persistence context.
 
+## Relationship engine
+
+M1 adds graph-level relationship semantics without coupling objects to a database or ORM.
+
+```ts
+const graph = new ObjectGraph(objects);
+
+graph.connect(team, "members", person);
+
+team.relationshipReferences("members");
+person.getRelationship("team");
+
+graph.disconnect(team, "members", person);
+```
+
+Relationship metadata supports:
+
+- one-to-one, one-to-many, many-to-one and many-to-many cardinality
+- inverse relationship validation and synchronization
+- source/target ownership metadata
+- ordered to-many collections
+- required relationships
+- `restrict`, `cascade` and `detach` referential actions
+- independent relationship dirty/change tracking
+- compile-time `InferRelationships<T>` inference
+
+Ownership is descriptive and does not implicitly delete objects. Lifecycle propagation is controlled explicitly with `onSourceDelete` and `onTargetDelete`, preventing accidental cascades.
+
+`MetaObjectRepository` validates persisted references by default. New cyclic or bidirectional object graphs can be persisted through `saveAll()`, which treats references between objects in the same batch as valid:
+
+```ts
+await repository.saveAll([team, person]);
+```
+
 ## Storage model
 
 The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` provides the M0 reference implementation and test harness.
@@ -115,9 +149,9 @@ const adults = await repository.query({
 
 Adapters translate this query AST to their native query language.
 
-## M0 scope
+## Implemented scope
 
-The initial kernel includes:
+The standalone kernel now includes:
 
 - metadata definitions
 - metadata registry and validation
@@ -136,12 +170,20 @@ The initial kernel includes:
 - abstract query model
 - optimistic concurrency
 - minimal TypeScript interface generation
+- inverse relationship validation and synchronization
+- graph navigation through `ObjectGraph`
+- ordered relationship collection mutation
+- relationship change tracking
+- referential integrity checks
+- batch persistence for cyclic graphs
+- explicit detach/restrict/cascade delete semantics
+- compile-time relationship inference
 
 ## Roadmap
 
-### M1 — Relationship engine
+### M1 — Relationship engine ✅
 
-Inverse relationships, referential integrity, ownership semantics and collection mutation APIs.
+Implemented: inverse synchronization, referential integrity, ownership metadata, collection mutation, graph navigation, batch persistence and delete policies.
 
 ### M2 — Inheritance and composition
 
