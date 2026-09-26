@@ -43,7 +43,7 @@ test("bundle import rejects published records without a locked manifest before w
     }],
   };
 
-  await assert.rejects(() => catalog.importBundle(bundle), /missing a released manifest/);
+  await assert.rejects(() => catalog.importBundle(bundle), /missing a (?:released|locked release) manifest/);
   assert.equal(await catalog.get(definition.id, definition.version), null);
 });
 

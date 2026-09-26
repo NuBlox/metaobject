@@ -52,9 +52,8 @@ export class MetadataCatalog {
   }
 
   /**
-   * Validate a set of drafts as one complete runtime graph before publication.
-   * This supports bidirectional relationships and inheritance cycles of dependency
-   * (not inheritance cycles themselves), where no member can be activated alone.
+   * Validate a set of drafts as one complete runtime graph, then commit the
+   * publication as one atomic metadata-store batch.
    */
   async publishMany(requests: readonly MetadataPublishRequest[]): Promise<readonly MetadataRecord[]> {
     if (requests.length === 0) return [];
@@ -80,15 +79,14 @@ export class MetadataCatalog {
     this.validateDefinitionSet(definitions, true);
 
     const now = this.clock().toISOString();
-    const published: MetadataRecord[] = [];
-    for (const candidate of candidates) {
-      published.push(await this.store.save({
+    return this.store.saveBatch(candidates.map((candidate) => ({
+      record: {
         ...candidate.record,
         status: "published",
         updatedAt: now,
-      }, candidate.expectedRevision));
-    }
-    return published;
+      },
+      expectedRevision: candidate.expectedRevision,
+    })));
   }
 
   async deprecate(objectTypeId: string, version: number, expectedRevision: number): Promise<MetadataRecord> {

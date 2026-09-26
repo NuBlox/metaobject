@@ -17,6 +17,11 @@ export interface MetadataRecordFilter {
   readonly status?: MetadataStatus;
 }
 
+export interface MetadataBatchWrite {
+  readonly record: MetadataRecord;
+  readonly expectedRevision?: number;
+}
+
 export interface MetadataStore {
   get(objectTypeId: string, version: number): Promise<MetadataRecord | null>;
   list(filter?: MetadataRecordFilter): Promise<readonly MetadataRecord[]>;
@@ -25,6 +30,12 @@ export interface MetadataStore {
    * existing record and provides optimistic concurrency semantics.
    */
   save(record: MetadataRecord, expectedRevision?: number): Promise<MetadataRecord>;
+  /**
+   * Apply all writes atomically. Either every optimistic revision check and write
+   * succeeds or the store remains unchanged. Database adapters should implement
+   * this with a transaction.
+   */
+  saveBatch(writes: readonly MetadataBatchWrite[]): Promise<readonly MetadataRecord[]>;
   delete(objectTypeId: string, version: number, expectedRevision: number): Promise<void>;
 }
 
