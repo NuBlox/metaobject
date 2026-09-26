@@ -20,6 +20,7 @@ export type RuntimeDriftRemediationCaseStatus =
   | "planned"
   | "deploying"
   | "verifying"
+  | "closing"
   | "closed"
   | "review";
 
@@ -94,7 +95,15 @@ export class MemoryRuntimeDriftRemediationCaseStore implements RuntimeDriftRemed
       }
       this.assertImmutableIdentity(current, record);
       if (current.status === "closed") {
-        throw new MetadataError(`Closed runtime drift remediation case '${record.caseId}' is immutable.`);
+        const allowedInvalidation = record.status === "review"
+          && record.repairDeploymentId === current.repairDeploymentId
+          && record.repairAttestationId === current.repairAttestationId
+          && record.replacementBaselineId === current.replacementBaselineId
+          && record.closureAssessmentId === current.closureAssessmentId
+          && record.closedAt === current.closedAt;
+        if (!allowedInvalidation) {
+          throw new MetadataError(`Closed runtime drift remediation case '${record.caseId}' is immutable.`);
+        }
       }
     } else if (expectedRevision !== undefined && expectedRevision !== 0) {
       throw new ConcurrencyError(
@@ -147,13 +156,15 @@ function exactPlanMatch(
   return JSON.stringify(canonical(actual)) === JSON.stringify(canonical(expected));
 }
 
+/** M25 closure requires a non-legacy deployment creation identity. */
 function sameDeploymentIdentity(
   deployment: RuntimeDeploymentRecord,
   revision: number,
   createdAt?: string,
 ): boolean {
-  return deployment.revision === revision
-    && (createdAt === undefined || deployment.createdAt === createdAt);
+  return createdAt !== undefined
+    && deployment.revision === revision
+    && deployment.createdAt === createdAt;
 }
 
 function assertCompletedDeployment(deployment: RuntimeDeploymentRecord): void {
@@ -309,25 +320,64 @@ export class RuntimeDriftRemediationCaseCatalog {
       throw new MetadataError(`Runtime drift remediation case '${caseId}' cannot close until the replacement baseline assesses cleanly.`);
     }
 
-    // Final read closes the race between immutable evidence lookup and case closure.
-    const finalDeployment = await this.deployments.get(deployment.deploymentId);
-    if (
-      !finalDeployment
-      || !sameDeploymentIdentity(finalDeployment, deployment.revision, deployment.createdAt)
-      || finalDeployment.status !== "completed"
-    ) {
-      throw new ConcurrencyError(`Runtime remediation deployment '${deployment.deploymentId}' changed during closure verification.`);
-    }
-
     const now = this.clock().toISOString();
-    return this.cases.save({
+    const closing = await this.cases.save({
       ...current,
-      status: "closed",
+      status: "closing",
       replacementBaselineId,
       closureAssessmentId,
-      closedAt: now,
       updatedAt: now,
     }, expectedRevision);
+
+    // The closing state is durable before the guard read. If the deployment moved
+    // during evidence evaluation or the closing write, record review instead.
+    const guardedDeployment = await this.deployments.get(deployment.deploymentId);
+    if (
+      !guardedDeployment
+      || !sameDeploymentIdentity(guardedDeployment, deployment.revision, deployment.createdAt)
+      || guardedDeployment.status !== "completed"
+    ) {
+      const reviewed = await this.cases.save({
+        ...closing,
+        status: "review",
+        reviewReason: "Repair deployment changed while remediation closure was being committed.",
+        updatedAt: this.clock().toISOString(),
+      }, closing.revision);
+      throw new ConcurrencyError(
+        `Runtime remediation deployment '${deployment.deploymentId}' changed during closure; case '${reviewed.caseId}' moved to review.`,
+      );
+    }
+
+    const closedAt = this.clock().toISOString();
+    const closed = await this.cases.save({
+      ...closing,
+      status: "closed",
+      closedAt,
+      updatedAt: closedAt,
+    }, closing.revision);
+
+    // A second read after the closed write detects mutations that occurred after
+    // the guard read but before/during the durable closure transition. If it no
+    // longer matches, compensate the case into review. Mutations after this read
+    // are subsequent drift and M26 will surface them as stale posture.
+    const postCloseDeployment = await this.deployments.get(deployment.deploymentId);
+    if (
+      !postCloseDeployment
+      || !sameDeploymentIdentity(postCloseDeployment, deployment.revision, deployment.createdAt)
+      || postCloseDeployment.status !== "completed"
+    ) {
+      const reviewed = await this.cases.save({
+        ...closed,
+        status: "review",
+        reviewReason: "Repair deployment changed across the remediation closure commit boundary.",
+        updatedAt: this.clock().toISOString(),
+      }, closed.revision);
+      throw new ConcurrencyError(
+        `Runtime remediation deployment '${deployment.deploymentId}' changed across closure commit; case '${reviewed.caseId}' moved to review.`,
+      );
+    }
+
+    return closed;
   }
 
   async requireReview(
@@ -337,7 +387,7 @@ export class RuntimeDriftRemediationCaseCatalog {
   ): Promise<RuntimeDriftRemediationCaseRecord> {
     if (!reason.trim()) throw new MetadataError("Runtime drift remediation review reason is required.");
     const current = await this.requireCase(caseId);
-    if (current.status === "closed") throw new MetadataError(`Closed runtime drift remediation case '${caseId}' cannot enter review.`);
+    if (current.status === "closed") throw new MetadataError(`Closed runtime drift remediation case '${caseId}' cannot enter review directly.`);
     return this.cases.save({
       ...current,
       status: "review",
@@ -379,6 +429,9 @@ export class RuntimeDriftRemediationCaseCatalog {
     deployment: RuntimeDeploymentRecord,
     current: RuntimeDriftRemediationCaseRecord,
   ): void {
+    if (attestation.deploymentCreatedAt === undefined) {
+      throw new MetadataError(`Post-remediation attestation '${attestation.attestationId}' lacks deployment creation identity required for exact closure.`);
+    }
     if (
       attestation.deploymentId !== deployment.deploymentId
       || attestation.profileId !== current.profileId
@@ -396,6 +449,9 @@ export class RuntimeDriftRemediationCaseCatalog {
     deployment: RuntimeDeploymentRecord,
     current: RuntimeDriftRemediationCaseRecord,
   ): void {
+    if (baseline.deploymentCreatedAt === undefined) {
+      throw new MetadataError(`Replacement runtime drift baseline '${baseline.baselineId}' lacks deployment creation identity required for exact closure.`);
+    }
     if (
       baseline.attestationId !== attestation.attestationId
       || baseline.deploymentId !== deployment.deploymentId
@@ -412,6 +468,9 @@ export class RuntimeDriftRemediationCaseCatalog {
     baseline: RuntimeDeploymentDriftBaseline,
     deployment: RuntimeDeploymentRecord,
   ): void {
+    if (assessment.deploymentCreatedAt === undefined) {
+      throw new MetadataError(`Remediation closure assessment '${assessment.assessmentId}' lacks deployment creation identity required for exact closure.`);
+    }
     if (
       assessment.baselineId !== baseline.baselineId
       || assessment.deploymentId !== deployment.deploymentId
@@ -438,16 +497,25 @@ export function validateRuntimeDriftRemediationCase(record: RuntimeDriftRemediat
   if (!record.createdAt.trim() || !record.updatedAt.trim()) {
     throw new MetadataError("Runtime drift remediation case timestamps are required.");
   }
-  if (record.status !== "planned" && !record.repairDeploymentId?.trim()) {
+  if (
+    (record.status === "deploying" || record.status === "verifying" || record.status === "closing" || record.status === "closed")
+    && !record.repairDeploymentId?.trim()
+  ) {
     throw new MetadataError(`Runtime drift remediation case status '${record.status}' requires a repair deployment.`);
   }
-  if ((record.status === "verifying" || record.status === "closed") && !record.repairAttestationId?.trim()) {
+  if (
+    (record.status === "verifying" || record.status === "closing" || record.status === "closed")
+    && !record.repairAttestationId?.trim()
+  ) {
     throw new MetadataError(`Runtime drift remediation case status '${record.status}' requires a repair attestation.`);
   }
-  if (record.status === "closed") {
-    if (!record.replacementBaselineId?.trim() || !record.closureAssessmentId?.trim() || !record.closedAt?.trim()) {
-      throw new MetadataError("Closed runtime drift remediation case requires replacement baseline, closure assessment and closedAt.");
+  if (record.status === "closing" || record.status === "closed") {
+    if (!record.replacementBaselineId?.trim() || !record.closureAssessmentId?.trim()) {
+      throw new MetadataError(`${record.status === "closed" ? "Closed" : "Closing"} runtime drift remediation case requires replacement baseline and closure assessment.`);
     }
+  }
+  if (record.status === "closed" && !record.closedAt?.trim()) {
+    throw new MetadataError("Closed runtime drift remediation case requires closedAt.");
   }
   if (record.status === "review" && !record.reviewReason?.trim()) {
     throw new MetadataError("Review runtime drift remediation case requires a review reason.");
