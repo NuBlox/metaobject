@@ -162,18 +162,38 @@ export class MetadataModuleCatalog {
     if (bundle.format !== "nublox-metaobject-modules" || bundle.formatVersion !== 1) {
       throw new MetadataError("Unsupported metadata module bundle format.");
     }
+
+    const existingRecords = await this.store.list();
+    const existingByKey = new Map(existingRecords.map((record) => [moduleKey(record.moduleId, record.moduleVersion), record]));
+    const simulated = new Map(existingByKey);
+    const incomingKeys = new Set<string>();
+
+    // Validate the complete bundle before writing any record.
     for (const incoming of bundle.records) {
+      const key = moduleKey(incoming.moduleId, incoming.moduleVersion);
+      if (incomingKeys.has(key)) throw new MetadataError(`Duplicate module bundle record '${key}'.`);
+      incomingKeys.add(key);
       if (incoming.definition.id !== incoming.moduleId || incoming.definition.version !== incoming.moduleVersion) {
-        throw new MetadataError(`Module bundle identity mismatch for '${moduleKey(incoming.moduleId, incoming.moduleVersion)}'.`);
+        throw new MetadataError(`Module bundle identity mismatch for '${key}'.`);
       }
       this.validateDefinition(incoming.definition);
-      const existing = await this.store.get(incoming.moduleId, incoming.moduleVersion);
+      const existing = existingByKey.get(key);
+      if (existing && (!options.replaceDrafts || existing.status !== "draft" || incoming.status !== "draft")) {
+        throw new MetadataError(`Metadata module '${key}' already exists.`);
+      }
+      simulated.set(key, structuredClone(incoming));
+    }
+
+    for (const incoming of bundle.records) {
+      if (incoming.status === "published") this.validateLockedPublishedRecord(incoming, simulated);
+    }
+
+    for (const incoming of bundle.records) {
+      const key = moduleKey(incoming.moduleId, incoming.moduleVersion);
+      const existing = existingByKey.get(key);
       if (!existing) {
         await this.store.save(structuredClone(incoming));
         continue;
-      }
-      if (!options.replaceDrafts || existing.status !== "draft" || incoming.status !== "draft") {
-        throw new MetadataError(`Metadata module '${moduleKey(incoming.moduleId, incoming.moduleVersion)}' already exists.`);
       }
       await this.store.save({
         ...structuredClone(incoming),
@@ -187,6 +207,33 @@ export class MetadataModuleCatalog {
   private validateDefinition(definition: MetadataModuleDefinition): void {
     const registry = new MetadataModuleRegistry();
     registry.register(definition);
+  }
+
+  private validateLockedPublishedRecord(
+    record: MetadataModuleRecord,
+    records: ReadonlyMap<string, MetadataModuleRecord>,
+  ): void {
+    const manifest = record.releasedManifest;
+    if (!manifest) {
+      throw new MetadataError(`Published module '${moduleKey(record.moduleId, record.moduleVersion)}' is missing a released manifest.`);
+    }
+    const registry = new MetadataModuleRegistry();
+    registry.register(record.definition);
+    for (const dependency of manifest.dependencies) {
+      const dependencyRecord = records.get(moduleKey(dependency.moduleId, dependency.version));
+      if (!dependencyRecord || dependencyRecord.status !== "published") {
+        throw new MetadataError(
+          `Published module '${moduleKey(record.moduleId, record.moduleVersion)}' locks missing dependency '${moduleKey(dependency.moduleId, dependency.version)}'.`,
+        );
+      }
+      registry.register(dependencyRecord.definition);
+    }
+    const resolved = registry.resolve(record.moduleId, record.moduleVersion);
+    if (canonical(expectedManifest(resolved)) !== canonical(manifest)) {
+      throw new MetadataError(
+        `Published module '${moduleKey(record.moduleId, record.moduleVersion)}' has a released manifest that does not resolve from its locked dependency versions.`,
+      );
+    }
   }
 
   private async requireRecord(moduleId: string, version: number): Promise<MetadataModuleRecord> {
@@ -219,10 +266,10 @@ export class MetadataModuleCatalog {
 
   private async assertNotRequiredByPublishedModules(definition: MetadataModuleDefinition): Promise<void> {
     const published = await this.store.list({ status: "published" });
+    const registry = new MetadataModuleRegistry();
+    for (const candidate of published) registry.register(candidate.definition);
     for (const record of published) {
       if (record.moduleId === definition.id && record.moduleVersion === definition.version) continue;
-      const registry = new MetadataModuleRegistry();
-      for (const candidate of published) registry.register(candidate.definition);
       let resolution: MetadataModuleResolution;
       try {
         resolution = registry.resolve(record.moduleId, record.moduleVersion);
