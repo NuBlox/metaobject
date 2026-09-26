@@ -1,5 +1,6 @@
 import { MetadataError } from "../errors/errors.js";
 import type { RuntimeDeploymentCatalog } from "./runtime-deployment-catalog.js";
+import type { RuntimeDeploymentPolicyGate } from "./runtime-deployment-policy.js";
 import type {
   RuntimeDeploymentRecord,
   RuntimeDeploymentStepEvidence,
@@ -113,6 +114,7 @@ export class RuntimeDeploymentExecutorRegistry {
 export type RuntimeDeploymentRunBlockedReason =
   | "approval-required"
   | "not-started"
+  | "policy-denied"
   | "recovery-required"
   | "step-failed"
   | "missing-executor"
@@ -155,6 +157,7 @@ export class RuntimeDeploymentRunner {
     private readonly executors: RuntimeDeploymentExecutorRegistry,
     private readonly clock: RuntimeDeploymentExecutionClock = () => new Date(),
     private readonly idempotencyKeys: RuntimeDeploymentIdempotencyKeyFactory = defaultIdempotencyKey,
+    private readonly policyGate?: RuntimeDeploymentPolicyGate,
   ) {}
 
   /** Execute pending work until the deployment completes, blocks or reaches maxSteps. */
@@ -180,6 +183,11 @@ export class RuntimeDeploymentRunner {
         return { record, executedSteps, blockedReason: "approval-required" };
       }
       if (!autoStart) return { record, executedSteps, blockedReason: "not-started" };
+      if (this.policyGate) {
+        const gated = await this.policyGate.evaluate(record);
+        record = gated.record;
+        if (!gated.report.allowed) return { record, executedSteps, blockedReason: "policy-denied" };
+      }
       record = await this.deployments.start(record.deploymentId, record.revision);
       if (record.status === "completed") return { record, executedSteps };
     }

@@ -14,6 +14,7 @@ export interface RuntimeDeploymentStepEvidence {
 export type RuntimeDeploymentJournalKind =
   | "deployment-created"
   | "deployment-approved"
+  | "deployment-policy-evaluated"
   | "deployment-started"
   | "deployment-cancelled"
   | "deployment-completed"
@@ -35,6 +36,9 @@ export interface RuntimeDeploymentJournalEntry {
   readonly idempotencyKey?: string;
   readonly error?: string;
   readonly recoveryResolution?: "retry" | "completed" | "unknown";
+  readonly policyId?: string;
+  readonly policyOutcome?: "allow" | "warn" | "deny";
+  readonly message?: string;
   readonly evidence?: RuntimeDeploymentStepEvidence;
 }
 
@@ -133,6 +137,22 @@ export function validateRuntimeDeploymentJournal(record: Pick<RuntimeDeploymentR
     }
     if (entry.error !== undefined && !entry.error.trim()) {
       throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} has an empty error.`);
+    }
+    if (entry.message !== undefined && !entry.message.trim()) {
+      throw new MetadataError(`Runtime deployment '${record.deploymentId}' journal entry ${entry.sequence} has an empty message.`);
+    }
+    if (entry.kind === "deployment-policy-evaluated") {
+      if (!entry.policyId?.trim()) {
+        throw new MetadataError(`Runtime deployment '${record.deploymentId}' policy journal entry ${entry.sequence} is missing policyId.`);
+      }
+      if (entry.policyOutcome === undefined) {
+        throw new MetadataError(`Runtime deployment '${record.deploymentId}' policy journal entry ${entry.sequence} is missing policyOutcome.`);
+      }
+      if (entry.policyOutcome !== "allow" && !entry.message?.trim()) {
+        throw new MetadataError(
+          `Runtime deployment '${record.deploymentId}' ${entry.policyOutcome} policy journal entry ${entry.sequence} requires a message.`,
+        );
+      }
     }
   }
 }
