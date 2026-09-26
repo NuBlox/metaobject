@@ -6,6 +6,8 @@ export type RelationshipCardinality =
 
 export type RelationshipOwnership = "none" | "source" | "target";
 
+export type RelationshipKind = "association" | "aggregation" | "composition";
+
 /**
  * Action applied when an object participating in a relationship is deleted.
  *
@@ -52,6 +54,9 @@ export interface RelationshipDefinition {
   /** Which end conceptually owns the relationship. */
   readonly ownership?: RelationshipOwnership;
 
+  /** Semantic relationship kind. Composition gives the source exclusive lifecycle ownership. */
+  readonly kind?: RelationshipKind;
+
   /** Whether target order is semantically significant for to-many relationships. */
   readonly ordered?: boolean;
 
@@ -76,6 +81,13 @@ export interface IndexDefinition {
 export type AttributeDefinitionMap = Readonly<Record<string, AttributeDefinition>>;
 export type RelationshipDefinitionMap = Readonly<Record<string, RelationshipDefinition>>;
 
+declare const inheritedObjectTypeBrand: unique symbol;
+
+/** Type-only link retained by defineDerivedObjectType for recursive TypeScript inference. */
+export interface InheritedObjectTypeDefinition<B extends ObjectTypeDefinition = ObjectTypeDefinition> {
+  readonly [inheritedObjectTypeBrand]: B;
+}
+
 export interface ObjectTypeDefinition<
   A extends AttributeDefinitionMap = AttributeDefinitionMap,
   R extends RelationshipDefinitionMap = RelationshipDefinitionMap,
@@ -93,6 +105,27 @@ export interface ObjectTypeDefinition<
   readonly indexes?: readonly IndexDefinition[];
 }
 
+export interface ResolvedObjectTypeDefinition extends ObjectTypeDefinition {
+  /** Root-to-leaf object type ids, including this object type. */
+  readonly lineage: readonly string[];
+  /** The unflattened metadata definition registered for this exact type. */
+  readonly declared: ObjectTypeDefinition;
+}
+
 export function defineObjectType<const D extends ObjectTypeDefinition>(definition: D): Readonly<D> {
   return Object.freeze(definition);
+}
+
+/**
+ * Define a derived type while retaining its base metadata in the TypeScript type
+ * system. The brand is type-only; serialized metadata still contains only baseType.
+ */
+export function defineDerivedObjectType<
+  const B extends ObjectTypeDefinition,
+  const D extends ObjectTypeDefinition & { readonly baseType: B["id"] },
+>(base: B, definition: D): Readonly<D & InheritedObjectTypeDefinition<B>> {
+  if (definition.baseType !== base.id) {
+    throw new TypeError(`Derived object type '${definition.id}' declares baseType '${definition.baseType}' but was defined from '${base.id}'.`);
+  }
+  return Object.freeze(definition) as Readonly<D & InheritedObjectTypeDefinition<B>>;
 }

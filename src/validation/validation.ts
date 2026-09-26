@@ -99,11 +99,11 @@ export class Validator {
       }
       for (let index = 0; index < refs.length; index += 1) {
         const ref = refs[index]!;
-        if (ref.type !== relationship.target) {
+        if (!object.acceptsRelationshipTarget(name, ref.type)) {
           issues.push(issue(
             "RELATIONSHIP_TARGET_TYPE",
             `${name}[${index}]`,
-            `${name} requires target type '${relationship.target}', received '${ref.type}'.`,
+            `${name} requires target type assignable to '${relationship.target}', received '${ref.type}'.`,
           ));
         }
         if (refs.slice(0, index).some((other) => sameObjectIdentity(other, ref))) {
