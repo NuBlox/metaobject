@@ -18,6 +18,7 @@ A standalone, application-agnostic metadata-driven object model and runtime for 
 - **Releases are gated.** Breaking changes, blocking migrations and optimistic draft revisions are enforced before publication.
 - **Modules make dependencies explicit.** Capability-level metadata releases declare exact object versions and version-ranged module dependencies.
 - **Released module graphs are durable.** Published modules persist the exact dependency versions actually used by a release.
+- **Interrupted releases are recoverable.** A durable `releasing` state preserves the exact locked manifest while metadata publication is atomic at the store boundary.
 - **Optimistic concurrency is explicit.** Runtime objects, metadata drafts and module drafts use version/revision checks.
 
 ## Quick start
@@ -125,6 +126,27 @@ The catalogue provides:
 
 See `docs/module-catalog.md`.
 
+## Transactional module release
+
+M12 coordinates durable module state with atomic metadata-member publication.
+
+```ts
+const releases = new PersistentMetadataModuleReleaseManager(
+  moduleCatalog,
+  metadataCatalog,
+  metadataReleaseManager,
+);
+
+await releases.release("workforce", 2, {
+  approveBreaking: true,
+  migrationExecutor,
+});
+```
+
+A release is locked as `releasing` before migrations begin. The exact module manifest is persisted at that point. Metadata members are then published through the atomic `MetadataStore.saveBatch()` contract and the module is completed as `published` only after the whole member graph succeeds.
+
+If processing fails after the lock is acquired, the module deliberately remains `releasing`. `abort()` can return it to draft only before any member has been published; `recover()` completes an interrupted release only after every member is published. See `docs/transactional-module-release.md`.
+
 ## Storage model
 
 The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` is the reference implementation and test harness.
@@ -139,7 +161,7 @@ Database-specific adapters remain separate packages:
 
 ## Implemented scope
 
-The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime objects; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; governed publication; portable metadata bundles; TypeScript/validator/JSON Schema generation; semantic schema evolution; portable migration planning; single/batch release coordination; versioned metadata modules; dependency resolution; module-wide releases; and a durable module catalogue with locked historical manifests.
+The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime objects; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; governed publication; portable metadata bundles; TypeScript/validator/JSON Schema generation; semantic schema evolution; portable migration planning; single/batch release coordination; versioned metadata modules; dependency resolution; module-wide releases; a durable module catalogue with locked historical manifests; atomic metadata publication batches; durable release locks; and interrupted-module release recovery.
 
 ## Roadmap
 
@@ -175,6 +197,9 @@ Implemented: versioned module definitions, dependency ranges, deterministic depe
 
 ### M11 — Persistent module catalogue ✅
 Implemented: pluggable module storage, optimistic module revisions, lifecycle management, locked release manifests, dependency-safe deprecation, registry reconstruction and validated portable module bundles.
+
+### M12 — Transactional module release ✅
+Implemented: durable `releasing` locks, exact manifest locking before migrations, atomic metadata-member publication, release recovery and guarded abort semantics.
 
 ## Development
 
