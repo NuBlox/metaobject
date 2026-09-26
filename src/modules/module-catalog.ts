@@ -80,7 +80,6 @@ export class MetadataModuleCatalog {
     return this.store.save(record, expectedRevision);
   }
 
-  /** Direct publication remains available for callers that already completed external release work. */
   async publish(
     moduleId: string,
     version: number,
@@ -97,7 +96,6 @@ export class MetadataModuleCatalog {
     }, expectedRevision);
   }
 
-  /** Lock the exact module definition/manifest before member migration and publication starts. */
   async beginRelease(
     moduleId: string,
     version: number,
@@ -114,7 +112,6 @@ export class MetadataModuleCatalog {
     }, expectedRevision);
   }
 
-  /** Complete a previously locked release after every module member is published. */
   async completeRelease(moduleId: string, version: number, expectedRevision: number): Promise<MetadataModuleRecord> {
     const current = await this.requireRecord(moduleId, version);
     if (current.status !== "releasing") {
@@ -137,7 +134,6 @@ export class MetadataModuleCatalog {
     }, expectedRevision);
   }
 
-  /** Return a release lock to draft. The orchestrator only permits this before member publication. */
   async abortRelease(moduleId: string, version: number, expectedRevision: number): Promise<MetadataModuleRecord> {
     const current = await this.requireRecord(moduleId, version);
     if (current.status !== "releasing") {
@@ -156,7 +152,7 @@ export class MetadataModuleCatalog {
     if (current.status !== "published") {
       throw new MetadataError(`Only published metadata modules can be deprecated: '${moduleKey(moduleId, version)}'.`);
     }
-    await this.assertNotRequiredByPublishedModules(current.definition);
+    await this.assertNotRequiredByActiveModules(current.definition);
     return this.store.save({
       ...current,
       status: "deprecated",
@@ -325,21 +321,18 @@ export class MetadataModuleCatalog {
     }
   }
 
-  private async assertNotRequiredByPublishedModules(definition: MetadataModuleDefinition): Promise<void> {
-    const published = await this.store.list({ status: "published" });
-    const registry = new MetadataModuleRegistry();
-    for (const candidate of published) registry.register(candidate.definition);
-    for (const record of published) {
+  private async assertNotRequiredByActiveModules(definition: MetadataModuleDefinition): Promise<void> {
+    const active = (await this.store.list()).filter(
+      (record) => record.status === "published" || record.status === "releasing",
+    );
+    for (const record of active) {
       if (record.moduleId === definition.id && record.moduleVersion === definition.version) continue;
-      let resolution: MetadataModuleResolution;
-      try {
-        resolution = registry.resolve(record.moduleId, record.moduleVersion);
-      } catch {
-        continue;
-      }
-      if (resolution.order.some((module) => module.id === definition.id && module.version === definition.version)) {
+      const locked = record.releasedManifest?.dependencies.some(
+        (dependency) => dependency.moduleId === definition.id && dependency.version === definition.version,
+      ) ?? false;
+      if (locked) {
         throw new MetadataError(
-          `Cannot deprecate '${moduleKey(definition.id, definition.version)}' while published module '${moduleKey(record.moduleId, record.moduleVersion)}' resolves it as a dependency.`,
+          `Cannot deprecate '${moduleKey(definition.id, definition.version)}' while ${record.status} module '${moduleKey(record.moduleId, record.moduleVersion)}' locks it as a dependency.`,
         );
       }
     }
