@@ -2,7 +2,7 @@
 
 A standalone, application-agnostic metadata-driven object model and runtime for TypeScript.
 
-`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, abstract querying, persistence contracts and optional TypeScript code generation. It has no dependency on NuBlox application products or on any database engine.
+`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, persistence contracts and optional TypeScript code generation. It has no dependency on NuBlox application products or on any database engine.
 
 ## Design principles
 
@@ -11,6 +11,7 @@ A standalone, application-agnostic metadata-driven object model and runtime for 
 - **Storage is pluggable.** The core package exposes a storage contract rather than embedding MySQL, PostgreSQL or another database.
 - **Relationships are first-class.** Object relationships are distinct from primitive attributes and can be coordinated bidirectionally through `ObjectGraph`.
 - **Behaviours remain serializable.** Metadata stores stable handler names; executable functions live in runtime registries.
+- **Queries are database-neutral.** The advanced query AST and planner sit above storage, allowing later adapters to push plans down natively.
 - **Type systems are extensible.** Applications can register additional attribute types without changing the kernel.
 - **Optimistic concurrency is part of the object contract.** Storage adapters enforce version checks consistently.
 
@@ -138,7 +139,7 @@ See `docs/constraints-behaviors.md`.
 
 ## Storage model
 
-The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` provides the M0 reference implementation and test harness.
+The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` provides the reference implementation and test harness.
 
 Database-specific adapters should be separate packages, for example:
 
@@ -148,23 +149,49 @@ Database-specific adapters should be separate packages, for example:
 @nublox/metaobject-storage-sqlite
 ```
 
-## Query model
+## Query engine
 
-Queries are database-independent:
+The original flat `ObjectQuery` remains available for storage-adapter compatibility. M4 adds `MetaQuery`, `QueryPlanner` and `QueryEngine` for richer database-neutral querying.
 
 ```ts
-const adults = await repository.query({
+const planner = new QueryPlanner(objects);
+const queryEngine = new QueryEngine(storage, planner);
+
+const result = await queryEngine.execute({
   objectType: "example.person",
-  where: [
-    { attribute: "age", operator: "gte", value: 18 },
+  where: {
+    and: [
+      { path: "age", operator: "gte", value: 18 },
+      { path: "department.name", operator: "eq", value: "Engineering" },
+    ],
+  },
+  select: [
+    { path: "name" },
+    { path: "department.name", as: "department" },
   ],
-  orderBy: [
-    { attribute: "age", direction: "desc" },
+  orderBy: [{ path: "salary", direction: "desc" }],
+  aggregates: [
+    { function: "count", as: "people" },
+    { function: "avg", path: "salary", as: "averageSalary" },
   ],
+  page: { first: 50 },
 });
 ```
 
-Adapters translate this query AST to their native query language.
+M4 supports:
+
+- recursive `and` / `or` / `not` expressions
+- metadata-validated dot-path predicates
+- multi-hop relationship traversal
+- projections and aliases
+- multi-column sorting and explicit null ordering
+- stable cursor pagination with `$id` tie-breaking
+- `count`, `sum`, `avg`, `min` and `max` aggregates
+- distinct aggregate values
+- optional subtype expansion
+- query planning with identified relationship traversal paths
+
+See `docs/query-engine.md`.
 
 ## Implemented scope
 
@@ -190,7 +217,6 @@ The standalone kernel now includes:
 - object identity and versioning
 - storage adapter contract
 - in-memory persistence adapter
-- abstract query model
 - optimistic concurrency
 - minimal TypeScript interface generation
 - inverse relationship validation and synchronization
@@ -209,6 +235,12 @@ The standalone kernel now includes:
 - exclusive composite-parent enforcement
 - composition lifecycle cascade
 - inherited rules, operations, events and hooks
+- recursive logical query expressions
+- relationship-path query traversal
+- projections and aliases
+- aggregate queries
+- stable cursor pagination
+- subtype-aware query planning
 
 ## Roadmap
 
@@ -224,9 +256,9 @@ Implemented: resolved base types, inherited attributes/relationships/indexes/def
 
 Implemented: custom constraints, cross-field rules, severity-aware validation, computed attributes, runtime behaviour registries, validation hooks, declared events, operations and inheritance of behaviour metadata.
 
-### M4 — Query engine
+### M4 — Query engine ✅
 
-Logical groups, relationship traversal, projections, aggregates, cursor pagination and query planning.
+Implemented: logical groups, relationship traversal, projections, aggregates, cursor pagination, subtype expansion and metadata-aware query planning.
 
 ### M5 — SQL storage adapters
 
