@@ -1,7 +1,7 @@
 import type { MetadataModuleDefinition } from "./metadata-module.js";
 import type { MetadataModuleManifest } from "./metadata-module-release.js";
 
-export type MetadataModuleStatus = "draft" | "published" | "deprecated";
+export type MetadataModuleStatus = "draft" | "releasing" | "published" | "deprecated";
 
 export interface MetadataModuleRecord {
   readonly moduleId: string;
@@ -9,6 +9,7 @@ export interface MetadataModuleRecord {
   readonly status: MetadataModuleStatus;
   readonly revision: number;
   readonly definition: MetadataModuleDefinition;
+  /** Locked release manifest for releasing/published versions. */
   readonly releasedManifest?: MetadataModuleManifest;
   readonly createdAt: string;
   readonly updatedAt: string;
