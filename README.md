@@ -2,19 +2,19 @@
 
 A standalone, application-agnostic metadata-driven object model and runtime for TypeScript.
 
-`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, persistence contracts and optional TypeScript code generation. It has no dependency on NuBlox application products or on any database engine.
+`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, persistence contracts and reproducible code generation. It has no dependency on NuBlox application products or on any database engine.
 
 ## Design principles
 
 - **Metadata is the source of truth.** Object definitions describe attributes, types, relationships, constraints, behaviours and indexes.
-- **Compile-time and runtime models coexist.** Metadata declared with `as const` can infer TypeScript value shapes; metadata loaded from JSON or a database receives the same runtime validation.
-- **Storage is pluggable.** The core package exposes storage contracts rather than embedding MySQL, PostgreSQL or another database.
-- **Relationships are first-class.** Object relationships are distinct from primitive attributes and can be coordinated bidirectionally through `ObjectGraph`.
-- **Behaviours remain serializable.** Metadata stores stable handler names; executable functions live in runtime registries.
-- **Queries are database-neutral.** The advanced query AST and planner sit above storage, allowing later adapters to push plans down natively.
-- **Metadata persistence is normalized.** Definitions can be flattened into database-ready object-type, attribute, relationship, constraint, index, rule and behaviour records.
-- **Type systems are extensible.** Applications can register additional attribute types without changing the kernel.
-- **Optimistic concurrency is part of the object contract.** Runtime objects and metadata drafts both use explicit version/revision checks.
+- **Compile-time and runtime models coexist.** Literal metadata can infer TypeScript shapes; JSON/database metadata receives the same runtime validation.
+- **Storage is pluggable.** Core exposes storage contracts rather than embedding MySQL, PostgreSQL or another database.
+- **Relationships are first-class.** `ObjectGraph` coordinates bidirectional relationship semantics.
+- **Behaviours remain serializable.** Metadata stores stable handler names; executable functions live in registries.
+- **Queries are database-neutral.** Rich query planning sits above storage and can later be pushed down by adapters.
+- **Metadata persistence is normalized.** Definitions flatten into database-ready metadata records.
+- **Generated artifacts are reproducible.** TypeScript, validators, JSON Schema and adapter artifacts are regenerated from metadata rather than becoming a second source of truth.
+- **Optimistic concurrency is explicit.** Runtime objects and metadata drafts use version/revision checks.
 
 ## Quick start
 
@@ -51,134 +51,35 @@ const repository = new MetaObjectRepository(
   new Validator(),
 );
 
-const person = factory.create(Person, {
-  firstName: "Stephen",
-  age: 41,
-});
-
+const person = factory.create(Person, { firstName: "Stephen", age: 41 });
 await repository.save(person);
 ```
 
-The `factory.create(Person, ...)` overload infers the value shape directly from the metadata. Passing a string type id instead supports fully dynamic metadata loaded at runtime.
-
 ## Built-in attribute types
 
-- `string`
-- `integer`
-- `number`
-- `decimal`
-- `boolean`
-- `date`
-- `datetime`
-- `uuid`
-- `json`
-- `binary`
-
-Additional types implement `AttributeType<T>` and are registered through `TypeRegistry`.
-
-## Runtime object states
-
-Objects transition through:
-
-```text
-new -> clean -> dirty -> clean
-       |         |
-       +-------> deleted
-```
-
-`detached` is also available for objects intentionally removed from a persistence context.
+`string`, `integer`, `number`, `decimal`, `boolean`, `date`, `datetime`, `uuid`, `json`, and `binary` are included. Additional types implement `AttributeType<T>` and register through `TypeRegistry`.
 
 ## Relationship engine
 
-M1 adds graph-level relationship semantics without coupling objects to a database or ORM.
+M1 adds one-to-one, one-to-many, many-to-one and many-to-many relationships, inverse synchronization, ownership, ordering, required relationships, change tracking, graph navigation, referential integrity, batch persistence and explicit `restrict` / `cascade` / `detach` delete policies.
 
-```ts
-const graph = new ObjectGraph(objects);
-
-graph.connect(team, "members", person);
-team.relationshipReferences("members");
-person.getRelationship("team");
-graph.disconnect(team, "members", person);
-```
-
-Relationship metadata supports one-to-one, one-to-many, many-to-one and many-to-many cardinality, inverse synchronization, ownership, ordering, required relationships, explicit referential actions and compile-time relationship inference.
-
-M2 adds single inheritance and semantic relationship kinds. `ObjectTypeRegistry.resolve()` flattens inherited metadata, `isA()` drives subtype assignment, and `defineDerivedObjectType()` preserves inherited compile-time shapes. Composition adds exclusive parentage and source-owned lifecycle cascade. See `docs/inheritance-composition.md`.
-
-`MetaObjectRepository` validates persisted references by default. New cyclic or bidirectional object graphs can be persisted through `saveAll()`.
+M2 adds single inheritance, abstract/sealed types, lineage, subtype-compatible relationships, aggregation, composition and exclusive composite-parent lifecycle semantics. See `docs/inheritance-composition.md`.
 
 ## Constraints and behaviours
 
-M3 makes validation and object behaviour extensible while preserving serializable metadata.
-
-- `ConstraintRegistry` supports built-in and custom attribute constraints.
-- Object-level `rules` support cross-field validation with error, warning and info severities.
-- Computed attributes reference named resolvers and are excluded from persisted values and create-input types.
-- `BehaviorRegistry` hosts computed resolvers, operation handlers and lifecycle hooks.
-- `ObjectBehaviorRuntime` evaluates computed values, invokes declared operations and emits declared domain events.
-- `EventBus` provides synchronous event dispatch to named or wildcard listeners.
-- Rules, operations, events and hooks are inherited through the object type hierarchy with shadow protection.
-
-See `docs/constraints-behaviors.md`.
-
-## Storage model
-
-The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` provides the reference implementation and test harness.
-
-Database-specific adapters remain separate packages, for example:
-
-```text
-@nublox/metaobject-storage-mysql
-@nublox/metaobject-storage-postgresql
-@nublox/metaobject-storage-sqlite
-```
+M3 adds custom constraints, cross-field rules, severity-aware validation, computed attributes, operations, hooks, declared domain events and inherited behaviour metadata. Executable code stays in runtime registries while metadata remains serializable. See `docs/constraints-behaviors.md`.
 
 ## Query engine
 
-M4 adds `MetaQuery`, `QueryPlanner` and `QueryEngine` while retaining the original flat `ObjectQuery` for storage-adapter compatibility.
+M4 adds `MetaQuery`, `QueryPlanner` and `QueryEngine` while retaining the original flat `ObjectQuery` storage contract.
 
-```ts
-const planner = new QueryPlanner(objects);
-const queryEngine = new QueryEngine(storage, planner);
-
-const result = await queryEngine.execute({
-  objectType: "example.person",
-  where: {
-    and: [
-      { path: "age", operator: "gte", value: 18 },
-      { path: "department.name", operator: "eq", value: "Engineering" },
-    ],
-  },
-  select: [
-    { path: "name" },
-    { path: "department.name", as: "department" },
-  ],
-  orderBy: [{ path: "salary", direction: "desc" }],
-  aggregates: [
-    { function: "count", as: "people" },
-    { function: "avg", path: "salary", as: "averageSalary" },
-  ],
-  page: { first: 50 },
-});
-```
-
-M4 supports recursive logical expressions, metadata-validated multi-hop paths, projections, aggregates, stable cursor pagination, explicit null ordering, subtype expansion and portable query planning. See `docs/query-engine.md`.
+Supported capabilities include recursive `and` / `or` / `not`, metadata-validated relationship paths, projections, aliases, aggregates, stable cursor pagination, explicit null ordering and subtype expansion. See `docs/query-engine.md`.
 
 ## Metadata persistence
 
-M6 adds a database-neutral, normalized metadata catalogue.
+M6 provides a database-neutral normalized catalogue with `draft`, `published` and `deprecated` lifecycle states, optimistic revisions, batch publication of mutually-dependent schemas, portable bundle import/export and reconstruction of runtime registries.
 
-```ts
-const metadataStore = new MemoryMetadataStore();
-const catalog = new MetadataCatalog(metadataStore, types);
-
-const draft = await catalog.saveDraft(Person);
-await catalog.publish(Person.id, Person.version, draft.revision);
-
-const runtimeRegistry = await catalog.createPublishedRegistry();
-```
-
-`normalizeObjectType()` flattens an object definition into row collections suitable for tables such as:
+`normalizeObjectType()` flattens definitions into row collections suitable for tables such as:
 
 ```text
 meta_object_type
@@ -193,37 +94,48 @@ meta_event
 meta_hook
 ```
 
-`denormalizeObjectType()` reconstructs the definition. Metadata records support draft/published/deprecated lifecycle, optimistic revision concurrency, version history, batch publication for mutually-dependent schemas, latest-published loading, and portable bundle export/import.
-
 See `docs/metadata-persistence.md`.
+
+## Code generation
+
+M7 expands code generation from a minimal interface emitter into a reproducible artifact system.
+
+```ts
+const generators = createDefaultArtifactGeneratorRegistry();
+const artifacts = generators.generateMany(
+  ["typescript", "typescript-validator", "json-schema", "metadata-snapshot"],
+  [Person],
+);
+```
+
+First-party generation includes:
+
+- TypeScript value interfaces
+- create-input interfaces that omit computed attributes by default
+- immutable typed model wrappers
+- dependency-free TypeScript validators
+- JSON Schema draft 2020-12
+- normalized metadata snapshot artifacts
+
+`ArtifactGeneratorRegistry` is also the extension point for database-specific packages. A future `@nublox/metaobject-storage-mysql` package can register MySQL DDL and mapping generators without adding a MySQL dependency to core.
+
+See `docs/code-generation.md`.
+
+## Storage model
+
+The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` is the reference implementation and test harness.
+
+Database-specific adapters remain separate packages:
+
+```text
+@nublox/metaobject-storage-mysql
+@nublox/metaobject-storage-postgresql
+@nublox/metaobject-storage-sqlite
+```
 
 ## Implemented scope
 
-The standalone kernel now includes:
-
-- metadata definitions, registry and validation
-- compile-time value and relationship inference
-- extensible attribute type registry
-- dynamic object factory and typed attribute enforcement
-- defaults and nullability
-- first-class relationships and graph navigation
-- inverse synchronization, ordered collections and referential actions
-- inheritance, polymorphism, aggregation and composition
-- extensible validation constraints and cross-field rules
-- computed attributes, operations, hooks and domain events
-- dirty tracking, serialization, identity and versioning
-- storage adapter contract and in-memory persistence
-- optimistic runtime concurrency
-- database-neutral advanced query engine and planner
-- recursive logical expressions and relationship-path traversal
-- projections, aggregates, cursor pagination and subtype queries
-- normalized metadata persistence model
-- versioned metadata store and in-memory reference implementation
-- draft / published / deprecated metadata lifecycle
-- batch metadata graph publication
-- metadata bundle export/import
-- runtime registry reconstruction from persisted metadata
-- minimal TypeScript interface generation
+The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime object creation; defaults/nullability; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; lifecycle-managed metadata publication; portable metadata bundles; TypeScript interfaces/create-inputs/classes; generated validators; JSON Schema; and an extensible artifact generator registry.
 
 ## Roadmap
 
@@ -237,11 +149,11 @@ Implemented: resolved base types, inherited metadata, abstract/sealed semantics,
 
 ### M3 — Constraint and behaviour registry ✅
 
-Implemented: custom constraints, cross-field rules, severity-aware validation, computed attributes, runtime behaviour registries, validation hooks, declared events, operations and behaviour metadata inheritance.
+Implemented: custom constraints, cross-field rules, severity-aware validation, computed attributes, runtime behaviour registries, hooks, events, operations and inherited behaviour metadata.
 
 ### M4 — Query engine ✅
 
-Implemented: logical groups, relationship traversal, projections, aggregates, cursor pagination, subtype expansion and metadata-aware query planning.
+Implemented: logical groups, relationship traversal, projections, aggregates, cursor pagination, subtype expansion and metadata-aware planning.
 
 ### M5 — SQL storage adapters
 
@@ -249,15 +161,15 @@ External package milestone. Begin with MySQL while keeping database drivers outs
 
 ### M6 — Metadata persistence ✅
 
-Implemented: normalized metadata rows, versioned store contract, optimistic catalogue revisions, lifecycle states, batch publication, published-registry loading and portable bundles.
+Implemented: normalized metadata rows, versioned store contract, optimistic catalogue revisions, lifecycle states, batch publication, runtime-registry loading and portable bundles.
 
-### M7 — Code generation
+### M7 — Code generation ✅
 
-Expand generation to TypeScript interfaces/classes, validators, JSON Schema and adapter-specific artifacts.
+Implemented: TypeScript interfaces/create-inputs/classes, generated validators, JSON Schema, metadata artifacts and an adapter-extensible artifact generator registry.
 
 ### M8 — Schema evolution
 
-Version metadata, calculate differences and provide migration planning hooks.
+Calculate metadata differences, classify compatibility and provide migration planning hooks.
 
 ## Development
 
