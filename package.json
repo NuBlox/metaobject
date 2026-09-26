@@ -1,6 +1,6 @@
 {
   "name": "@nublox/metaobject",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Standalone metadata-driven object model and runtime for TypeScript.",
   "type": "module",
   "sideEffects": false,
