@@ -16,7 +16,7 @@ export class ObjectBehaviorRuntime {
     if (!definition) throw new MetadataError(`Unknown attribute '${object.objectType.id}.${attribute}'.`);
     if (!definition.computed) return object.get(attribute);
 
-    const value = this.behaviors.compute(definition.computed.behavior, { object, attribute });
+    const value = this.behaviors.compute(definition.computed.resolver, { object, attribute });
     if (value === null) {
       if (!definition.nullable) throw new TypeError(`Computed attribute '${attribute}' does not allow null.`);
       return value;
@@ -37,11 +37,7 @@ export class ObjectBehaviorRuntime {
   invoke(object: MetaObject, operation: string, input?: unknown): unknown {
     const definition = object.objectType.operations?.[operation];
     if (!definition) throw new MetadataError(`Unknown operation '${object.objectType.id}.${operation}'.`);
-
-    this.behaviors.runObjectHooks(object, "beforeOperation", { operation, input });
-    const result = this.behaviors.invoke(definition.behavior, { object, operation, input });
-    this.behaviors.runObjectHooks(object, "afterOperation", { operation, input });
-    return result;
+    return this.behaviors.invoke(definition.handler, { object, operation, input });
   }
 
   /** Emit a declared domain event. Undeclared event names are rejected. */
