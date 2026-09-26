@@ -1,5 +1,6 @@
-import { ConcurrencyError } from "../errors/errors.js";
+import { ConcurrencyError, MetadataError } from "../errors/errors.js";
 import type {
+  MetadataBatchWrite,
   MetadataRecord,
   MetadataRecordFilter,
   MetadataStore,
@@ -7,6 +8,35 @@ import type {
 
 const keyOf = (objectTypeId: string, version: number): string => `${objectTypeId}@${version}`;
 const clone = <T>(value: T): T => structuredClone(value);
+
+function applySave(
+  records: Map<string, MetadataRecord>,
+  record: MetadataRecord,
+  expectedRevision?: number,
+): MetadataRecord {
+  const key = keyOf(record.objectTypeId, record.objectTypeVersion);
+  const current = records.get(key);
+  if (!current) {
+    if (expectedRevision !== undefined && expectedRevision !== 0) {
+      throw new ConcurrencyError(`Metadata '${key}' does not exist at expected revision ${expectedRevision}.`);
+    }
+    const inserted = clone({ ...record, revision: 1 });
+    records.set(key, inserted);
+    return clone(inserted);
+  }
+  if (expectedRevision === undefined || current.revision !== expectedRevision) {
+    throw new ConcurrencyError(
+      `Metadata concurrency conflict for '${key}': expected revision ${expectedRevision ?? "<missing>"}, found ${current.revision}.`,
+    );
+  }
+  const updated = clone({
+    ...record,
+    revision: current.revision + 1,
+    createdAt: current.createdAt,
+  });
+  records.set(key, updated);
+  return clone(updated);
+}
 
 export class MemoryMetadataStore implements MetadataStore {
   readonly #records = new Map<string, MetadataRecord>();
@@ -25,28 +55,26 @@ export class MemoryMetadataStore implements MetadataStore {
   }
 
   async save(record: MetadataRecord, expectedRevision?: number): Promise<MetadataRecord> {
-    const key = keyOf(record.objectTypeId, record.objectTypeVersion);
-    const current = this.#records.get(key);
-    if (!current) {
-      if (expectedRevision !== undefined && expectedRevision !== 0) {
-        throw new ConcurrencyError(`Metadata '${key}' does not exist at expected revision ${expectedRevision}.`);
-      }
-      const inserted = clone({ ...record, revision: 1 });
-      this.#records.set(key, inserted);
-      return clone(inserted);
+    return applySave(this.#records, record, expectedRevision);
+  }
+
+  async saveBatch(writes: readonly MetadataBatchWrite[]): Promise<readonly MetadataRecord[]> {
+    const seen = new Set<string>();
+    const staged = new Map<string, MetadataRecord>(
+      [...this.#records.entries()].map(([key, record]) => [key, clone(record)]),
+    );
+    const saved: MetadataRecord[] = [];
+
+    for (const write of writes) {
+      const key = keyOf(write.record.objectTypeId, write.record.objectTypeVersion);
+      if (seen.has(key)) throw new MetadataError(`Duplicate metadata batch write '${key}'.`);
+      seen.add(key);
+      saved.push(applySave(staged, write.record, write.expectedRevision));
     }
-    if (expectedRevision === undefined || current.revision !== expectedRevision) {
-      throw new ConcurrencyError(
-        `Metadata concurrency conflict for '${key}': expected revision ${expectedRevision ?? "<missing>"}, found ${current.revision}.`,
-      );
-    }
-    const updated = clone({
-      ...record,
-      revision: current.revision + 1,
-      createdAt: current.createdAt,
-    });
-    this.#records.set(key, updated);
-    return clone(updated);
+
+    this.#records.clear();
+    for (const [key, record] of staged) this.#records.set(key, clone(record));
+    return saved.map(clone);
   }
 
   async delete(objectTypeId: string, version: number, expectedRevision: number): Promise<void> {
