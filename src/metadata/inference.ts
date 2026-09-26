@@ -1,4 +1,8 @@
-import type { AttributeDefinition, ObjectTypeDefinition } from "./definitions.js";
+import type {
+  AttributeDefinition,
+  ObjectTypeDefinition,
+  RelationshipDefinition,
+} from "./definitions.js";
 
 export interface BuiltinAttributeTypeMap {
   string: string;
@@ -11,6 +15,11 @@ export interface BuiltinAttributeTypeMap {
   uuid: string;
   json: unknown;
   binary: Uint8Array;
+}
+
+export interface InferredObjectReference<TType extends string = string> {
+  readonly id: string;
+  readonly type: TType;
 }
 
 type BaseAttributeValue<A extends AttributeDefinition> =
@@ -47,5 +56,37 @@ export type InferValues<D extends ObjectTypeDefinition> = {
 } & {
   [K in OptionalAttributeKeys<D>]?: D["attributes"][K] extends AttributeDefinition
     ? InferAttributeValue<D["attributes"][K]>
+    : never;
+};
+
+export type InferRelationshipValue<R extends RelationshipDefinition> =
+  R["cardinality"] extends "one-to-many" | "many-to-many"
+    ? readonly InferredObjectReference<R["target"]>[]
+    : InferredObjectReference<R["target"]>;
+
+type RelationshipMap<D extends ObjectTypeDefinition> =
+  NonNullable<D["relationships"]>;
+
+type RequiredRelationshipKeys<D extends ObjectTypeDefinition> = {
+  [K in keyof RelationshipMap<D>]: RelationshipMap<D>[K] extends RelationshipDefinition
+    ? RelationshipMap<D>[K]["required"] extends true
+      ? K
+      : never
+    : never;
+}[keyof RelationshipMap<D>];
+
+type OptionalRelationshipKeys<D extends ObjectTypeDefinition> = Exclude<
+  keyof RelationshipMap<D>,
+  RequiredRelationshipKeys<D>
+>;
+
+/** Compile-time relationship shape inferred from literal object metadata. */
+export type InferRelationships<D extends ObjectTypeDefinition> = {
+  [K in RequiredRelationshipKeys<D>]: RelationshipMap<D>[K] extends RelationshipDefinition
+    ? InferRelationshipValue<RelationshipMap<D>[K]>
+    : never;
+} & {
+  [K in OptionalRelationshipKeys<D>]?: RelationshipMap<D>[K] extends RelationshipDefinition
+    ? InferRelationshipValue<RelationshipMap<D>[K]>
     : never;
 };
