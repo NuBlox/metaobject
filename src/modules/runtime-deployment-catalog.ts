@@ -2,6 +2,7 @@ import { MetadataError } from "../errors/errors.js";
 import type { RuntimeProfileUpgradePlan, RuntimeProfileUpgradeStep } from "./runtime-profile-upgrade.js";
 import type {
   RuntimeDeploymentRecord,
+  RuntimeDeploymentStepEvidence,
   RuntimeDeploymentStepState,
   RuntimeDeploymentStore,
 } from "./runtime-deployment-store.js";
@@ -18,12 +19,24 @@ export interface RuntimeDeploymentStepLease {
   readonly step: RuntimeProfileUpgradeStep;
 }
 
+export interface RuntimeDeploymentStepLeaseMetadata {
+  readonly executorId: string;
+  readonly idempotencyKey: string;
+}
+
 function replaceStep(
   states: readonly RuntimeDeploymentStepState[],
   stepId: string,
   replacement: RuntimeDeploymentStepState,
 ): readonly RuntimeDeploymentStepState[] {
   return states.map((state) => state.stepId === stepId ? replacement : state);
+}
+
+function assertEvidence(evidence: RuntimeDeploymentStepEvidence): void {
+  if (!evidence.recordedAt.trim()) throw new MetadataError("Runtime deployment evidence recordedAt is required.");
+  if (evidence.externalReference !== undefined && !evidence.externalReference.trim()) {
+    throw new MetadataError("Runtime deployment evidence externalReference cannot be empty.");
+  }
 }
 
 export class RuntimeDeploymentCatalog {
@@ -95,10 +108,14 @@ export class RuntimeDeploymentCatalog {
 
   /**
    * Persist a lease on the next pending step before external execution starts.
-   * A surviving `running` step therefore represents an uncertain side effect and
-   * must be explicitly recovered after process interruption.
+   * Optional executor metadata is locked into the durable step state. Once a
+   * step has an executor/idempotency key, retries must reuse the same values.
    */
-  async beginNextStep(deploymentId: string, expectedRevision: number): Promise<RuntimeDeploymentStepLease> {
+  async beginNextStep(
+    deploymentId: string,
+    expectedRevision: number,
+    metadata?: RuntimeDeploymentStepLeaseMetadata,
+  ): Promise<RuntimeDeploymentStepLease> {
     const current = await this.requireRecord(deploymentId);
     if (current.status !== "running") {
       throw new MetadataError(`Runtime deployment '${deploymentId}' must be running before a step can begin.`);
@@ -116,11 +133,28 @@ export class RuntimeDeploymentCatalog {
     const definition = current.plan.steps.find((step) => step.id === pending.stepId);
     if (!definition) throw new MetadataError(`Runtime deployment '${deploymentId}' is missing plan step '${pending.stepId}'.`);
 
+    if (metadata) {
+      if (!metadata.executorId.trim()) throw new MetadataError("Runtime deployment executor id is required.");
+      if (!metadata.idempotencyKey.trim()) throw new MetadataError("Runtime deployment idempotency key is required.");
+      if (pending.executorId !== undefined && pending.executorId !== metadata.executorId) {
+        throw new MetadataError(
+          `Runtime deployment step '${pending.stepId}' is locked to executor '${pending.executorId}', not '${metadata.executorId}'.`,
+        );
+      }
+      if (pending.idempotencyKey !== undefined && pending.idempotencyKey !== metadata.idempotencyKey) {
+        throw new MetadataError(`Runtime deployment step '${pending.stepId}' idempotency key cannot change between attempts.`);
+      }
+    }
+
+    const executorId = pending.executorId ?? metadata?.executorId;
+    const idempotencyKey = pending.idempotencyKey ?? metadata?.idempotencyKey;
     const now = this.clock().toISOString();
     const nextState: RuntimeDeploymentStepState = {
       stepId: pending.stepId,
       status: "running",
       attempts: pending.attempts + 1,
+      ...(executorId === undefined ? {} : { executorId }),
+      ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
       startedAt: now,
     };
     const record = await this.store.save({
@@ -135,6 +169,7 @@ export class RuntimeDeploymentCatalog {
     deploymentId: string,
     stepId: string,
     expectedRevision: number,
+    evidence?: RuntimeDeploymentStepEvidence,
   ): Promise<RuntimeDeploymentRecord> {
     const current = await this.requireRecord(deploymentId);
     if (current.status !== "running") throw new MetadataError(`Runtime deployment '${deploymentId}' is not running.`);
@@ -142,11 +177,13 @@ export class RuntimeDeploymentCatalog {
     if (state.status !== "running") {
       throw new MetadataError(`Runtime deployment step '${stepId}' must be running before completion.`);
     }
+    if (evidence) assertEvidence(evidence);
     const now = this.clock().toISOString();
     const steps = replaceStep(current.steps, stepId, {
       ...state,
       status: "completed",
       completedAt: now,
+      ...(evidence === undefined ? {} : { evidence: structuredClone(evidence) }),
     });
     const complete = steps.every((step) => step.status === "completed");
     return this.store.save({
@@ -163,12 +200,14 @@ export class RuntimeDeploymentCatalog {
     stepId: string,
     expectedRevision: number,
     error: string,
+    evidence?: RuntimeDeploymentStepEvidence,
   ): Promise<RuntimeDeploymentRecord> {
     const current = await this.requireRecord(deploymentId);
     if (current.status !== "running") throw new MetadataError(`Runtime deployment '${deploymentId}' is not running.`);
     const state = this.requireStep(current, stepId);
     if (state.status !== "running") throw new MetadataError(`Runtime deployment step '${stepId}' is not running.`);
     if (!error.trim()) throw new MetadataError("Runtime deployment step failure requires an error message.");
+    if (evidence) assertEvidence(evidence);
     const now = this.clock().toISOString();
     return this.store.save({
       ...current,
@@ -177,6 +216,7 @@ export class RuntimeDeploymentCatalog {
         ...state,
         status: "failed",
         lastError: error,
+        ...(evidence === undefined ? {} : { evidence: structuredClone(evidence) }),
       }),
       updatedAt: now,
     }, expectedRevision);
@@ -184,14 +224,15 @@ export class RuntimeDeploymentCatalog {
 
   /**
    * Resolve a failed step or an in-flight step left by an interrupted process.
-   * `retry` returns it to pending; `completed` confirms the external side effect
-   * already succeeded and advances the durable state without executing it again.
+   * `retry` returns it to pending while preserving the locked executor/key;
+   * `completed` confirms the external side effect already succeeded.
    */
   async recoverStep(
     deploymentId: string,
     stepId: string,
     expectedRevision: number,
     resolution: RuntimeDeploymentRecoveryResolution,
+    evidence?: RuntimeDeploymentStepEvidence,
   ): Promise<RuntimeDeploymentRecord> {
     const current = await this.requireRecord(deploymentId);
     if (current.status !== "running" && current.status !== "failed") {
@@ -201,10 +242,22 @@ export class RuntimeDeploymentCatalog {
     if (state.status !== "running" && state.status !== "failed") {
       throw new MetadataError(`Runtime deployment step '${stepId}' is not running or failed.`);
     }
+    if (evidence) assertEvidence(evidence);
     const now = this.clock().toISOString();
     const recovered: RuntimeDeploymentStepState = resolution === "retry"
-      ? { stepId, status: "pending", attempts: state.attempts }
-      : { ...state, status: "completed", completedAt: now };
+      ? {
+          stepId,
+          status: "pending",
+          attempts: state.attempts,
+          ...(state.executorId === undefined ? {} : { executorId: state.executorId }),
+          ...(state.idempotencyKey === undefined ? {} : { idempotencyKey: state.idempotencyKey }),
+        }
+      : {
+          ...state,
+          status: "completed",
+          completedAt: now,
+          ...(evidence === undefined ? {} : { evidence: structuredClone(evidence) }),
+        };
     const steps = replaceStep(current.steps, stepId, recovered);
     const complete = steps.every((step) => step.status === "completed");
     return this.store.save({
