@@ -36,6 +36,10 @@ function validateConstraint(attributeName: string, constraint: ConstraintDefinit
 
 function validateAttribute(name: string, attribute: AttributeDefinition, types: TypeRegistry): void {
   if (!types.has(attribute.type)) throw new MetadataError(`${name}: unknown attribute type '${attribute.type}'.`);
+  if (attribute.computed) {
+    if (!attribute.computed.resolver.trim()) throw new MetadataError(`${name}: computed resolver is required.`);
+    if (attribute.default !== undefined) throw new MetadataError(`${name}: computed attributes cannot declare a stored default.`);
+  }
   for (const constraint of attribute.constraints ?? []) validateConstraint(name, constraint);
 }
 
@@ -83,6 +87,10 @@ function freezeResolved(definition: ResolvedObjectTypeDefinition): ResolvedObjec
   Object.freeze(definition.attributes);
   if (definition.relationships) Object.freeze(definition.relationships);
   if (definition.indexes) Object.freeze(definition.indexes);
+  if (definition.rules) Object.freeze(definition.rules);
+  if (definition.operations) Object.freeze(definition.operations);
+  if (definition.events) Object.freeze(definition.events);
+  if (definition.hooks) Object.freeze(definition.hooks);
   Object.freeze(definition.lineage);
   return Object.freeze(definition);
 }
@@ -110,6 +118,24 @@ export class ObjectTypeRegistry {
     }
     for (const [name, relationship] of Object.entries(definition.relationships ?? {})) {
       validateRelationshipShape(definition.id, name, relationship);
+    }
+    const ruleIds = new Set<string>();
+    for (const rule of definition.rules ?? []) {
+      if (!rule.id.trim() || !rule.type.trim()) throw new MetadataError(`${definition.id}: rule id and type are required.`);
+      if (ruleIds.has(rule.id)) throw new MetadataError(`${definition.id}: duplicate rule id '${rule.id}'.`);
+      ruleIds.add(rule.id);
+    }
+    const hookIds = new Set<string>();
+    for (const hook of definition.hooks ?? []) {
+      if (!hook.id.trim() || !hook.handler.trim()) throw new MetadataError(`${definition.id}: hook id and handler are required.`);
+      if (hookIds.has(hook.id)) throw new MetadataError(`${definition.id}: duplicate hook id '${hook.id}'.`);
+      hookIds.add(hook.id);
+    }
+    for (const [name, operation] of Object.entries(definition.operations ?? {})) {
+      if (!name.trim() || !operation.handler.trim()) throw new MetadataError(`${definition.id}: operation name and handler are required.`);
+    }
+    for (const name of Object.keys(definition.events ?? {})) {
+      if (!name.trim()) throw new MetadataError(`${definition.id}: event name is required.`);
     }
 
     const frozen = Object.freeze(definition);
@@ -244,6 +270,10 @@ export class ObjectTypeRegistry {
     let attributes: Record<string, AttributeDefinition> = { ...definition.attributes };
     let relationships: Record<string, RelationshipDefinition> = { ...(definition.relationships ?? {}) };
     let indexes = [...(definition.indexes ?? [])];
+    let rules = [...(definition.rules ?? [])];
+    let operations = { ...(definition.operations ?? {}) };
+    let events = { ...(definition.events ?? {}) };
+    let hooks = [...(definition.hooks ?? [])];
     let lineage = [definition.id];
 
     if (definition.baseType) {
@@ -271,10 +301,28 @@ export class ObjectTypeRegistry {
           throw new MetadataError(`${definition.id}: index '${index.name}' shadows an inherited index.`);
         }
       }
+      const inheritedRuleIds = new Set((base.rules ?? []).map((rule) => rule.id));
+      for (const rule of definition.rules ?? []) {
+        if (inheritedRuleIds.has(rule.id)) throw new MetadataError(`${definition.id}: rule '${rule.id}' shadows an inherited rule.`);
+      }
+      for (const name of Object.keys(definition.operations ?? {})) {
+        if (name in (base.operations ?? {})) throw new MetadataError(`${definition.id}: operation '${name}' shadows an inherited operation.`);
+      }
+      for (const name of Object.keys(definition.events ?? {})) {
+        if (name in (base.events ?? {})) throw new MetadataError(`${definition.id}: event '${name}' shadows an inherited event.`);
+      }
+      const inheritedHookIds = new Set((base.hooks ?? []).map((hook) => hook.id));
+      for (const hook of definition.hooks ?? []) {
+        if (inheritedHookIds.has(hook.id)) throw new MetadataError(`${definition.id}: hook '${hook.id}' shadows an inherited hook.`);
+      }
 
       attributes = { ...base.attributes, ...definition.attributes };
       relationships = { ...(base.relationships ?? {}), ...(definition.relationships ?? {}) };
       indexes = [...(base.indexes ?? []), ...(definition.indexes ?? [])];
+      rules = [...(base.rules ?? []), ...(definition.rules ?? [])];
+      operations = { ...(base.operations ?? {}), ...(definition.operations ?? {}) };
+      events = { ...(base.events ?? {}), ...(definition.events ?? {}) };
+      hooks = [...(base.hooks ?? []), ...(definition.hooks ?? [])];
       lineage = [...base.lineage, definition.id];
     }
 
@@ -287,12 +335,26 @@ export class ObjectTypeRegistry {
         }
       }
     }
+    for (const [name, attribute] of Object.entries(attributes)) {
+      for (const dependency of attribute.computed?.dependencies ?? []) {
+        if (!(dependency in attributes)) {
+          throw new MetadataError(`${definition.id}.${name}: unknown computed dependency '${dependency}'.`);
+        }
+        if (dependency === name) {
+          throw new MetadataError(`${definition.id}.${name}: a computed attribute cannot depend directly on itself.`);
+        }
+      }
+    }
 
     const resolved = freezeResolved({
       ...definition,
       attributes,
       relationships,
       indexes,
+      rules,
+      operations,
+      events,
+      hooks,
       lineage,
       declared: definition,
     });
