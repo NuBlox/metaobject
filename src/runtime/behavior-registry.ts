@@ -1,5 +1,5 @@
 import { MetadataError } from "../errors/errors.js";
-import type { BehaviorHook } from "../metadata/definitions.js";
+import type { HookPhase } from "../metadata/definitions.js";
 import type { MetaObject } from "./meta-object.js";
 
 export interface BehaviorContext {
@@ -82,13 +82,16 @@ export class BehaviorRegistry {
     }
   }
 
+  runObjectHooks(object: MetaObject, phase: HookPhase, context: Omit<BehaviorContext, "object"> = {}): void {
+    const handlers = (object.objectType.hooks ?? [])
+      .filter((hook) => hook.phase === phase)
+      .map((hook) => hook.handler);
+    this.runHooks(handlers, { object, ...context });
+  }
+
   hasComputed(name: string): boolean { return this.#computed.has(name); }
   hasOperation(name: string): boolean { return this.#operations.has(name); }
   hasHook(name: string): boolean { return this.#hooks.has(name); }
-
-  runObjectHooks(object: MetaObject, hook: BehaviorHook, context: Omit<BehaviorContext, "object"> = {}): void {
-    this.runHooks(object.objectType.hooks?.[hook], { object, ...context });
-  }
 
   private registerUnique<T>(map: Map<string, T>, kind: string, name: string, value: T): void {
     if (!name.trim()) throw new MetadataError(`${kind} behavior name is required.`);
