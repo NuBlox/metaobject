@@ -12,6 +12,8 @@ export * from "./metadata/memory-metadata-store.js";
 export * from "./metadata/metadata-catalog.js";
 export * from "./metadata/metadata-store.js";
 export * from "./metadata/persistence-model.js";
+export * from "./modules/metadata-module.js";
+export * from "./modules/metadata-module-release.js";
 export * from "./query/query.js";
 export * from "./query/query-engine.js";
 export * from "./query/query-planner.js";
