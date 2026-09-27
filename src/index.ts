@@ -33,7 +33,21 @@ export * from "./modules/runtime-drift-remediation.js";
 export * from "./modules/runtime-fleet-control.js";
 export * from "./modules/runtime-fleet-convergence-dispatch.js";
 export * from "./modules/runtime-fleet-convergence-execution.js";
-export * from "./modules/runtime-fleet-convergence-fairness.js";
+export {
+  MemoryRuntimeFleetConvergenceFairnessStore,
+  RuntimeFleetConvergenceFairnessCatalog,
+  validateRuntimeFleetConvergenceFairnessEvaluation,
+  validateRuntimeFleetConvergenceFairnessPolicy,
+} from "./modules/runtime-fleet-convergence-fairness.js";
+export type {
+  RuntimeFleetConvergenceFairnessClock,
+  RuntimeFleetConvergenceFairnessDecision,
+  RuntimeFleetConvergenceFairnessEvaluation,
+  RuntimeFleetConvergenceFairnessFilter,
+  RuntimeFleetConvergenceFairnessPolicyDefinition,
+  RuntimeFleetConvergenceFairnessRequest,
+  RuntimeFleetConvergenceFairnessStore,
+} from "./modules/runtime-fleet-convergence-fairness.js";
 export * from "./modules/runtime-fleet-convergence-policy-dispatch.js";
 export * from "./modules/runtime-fleet-convergence-queue-policy.js";
 export * from "./modules/runtime-fleet-convergence.js";
