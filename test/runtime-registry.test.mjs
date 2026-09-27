@@ -6,7 +6,9 @@ import {
 } from "../dist/index.js";
 
 class MapSource {
-  constructor(records = []) { this.records = new Map(records.map((record) => [record.snapshotId ?? record.cycleId, structuredClone(record)])); }
+  constructor(records = [], key = "snapshotId") {
+    this.records = new Map(records.map((record) => [record[key], structuredClone(record)]));
+  }
   async get(id) { return this.records.has(id) ? structuredClone(this.records.get(id)) : null; }
   set(id, value) { this.records.set(id, structuredClone(value)); }
 }
@@ -74,8 +76,8 @@ function failedCycle(overrides = {}) {
 
 function fixture() {
   const store = new MemoryRuntimeTargetStore();
-  const postures = new MapSource([posture()]);
-  const cycles = new MapSource([completedCycle(), failedCycle()]);
+  const postures = new MapSource([posture()], "snapshotId");
+  const cycles = new MapSource([completedCycle(), failedCycle()], "cycleId");
   let tick = 0;
   const catalog = new RuntimeTargetCatalog(store, postures, cycles, () => new Date(`2026-09-27T10:00:0${tick++}.000Z`));
   return { store, postures, cycles, catalog };
