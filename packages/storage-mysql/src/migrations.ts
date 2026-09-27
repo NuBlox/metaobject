@@ -534,6 +534,11 @@ function validateLedger(plan: MigrationPlan, rows: readonly MigrationRow[]): Set
       );
     }
     const expected = plan.migrations[version - 1];
+    if (!expected) {
+      throw new MetadataError(
+        `MySQL ${plan.component} schema version ${version} has no migration definition.`,
+      );
+    }
     const checksum = migrationChecksum(plan.component, expected);
     if (row.migration_id !== expected.id || row.checksum !== checksum) {
       throw new MetadataError(
@@ -589,8 +594,6 @@ async function migratePlan(
     await acquireMigrationLock(connection, lockName, validated.lockTimeoutSeconds);
     lockAcquired = true;
 
-    // Re-check after acquiring the lock in case another initializer completed
-    // migration work while this caller was waiting.
     await verifyLedgerTable(connection, validated.migrationTableName);
     const ledgerRows = await readLedger(
       connection,
