@@ -52,7 +52,7 @@ export interface RuntimePostureResponseRecord {
   readonly assessmentId: string;
   readonly disposition: RuntimePostureResponseDisposition;
   readonly decisions: readonly RuntimePosturePolicyDecision[];
-  /** Present only when the final disposition is remediate and M24 produced a governed plan. */
+  /** Present only when M24 was invoked for a remediation response. */
   readonly remediationPlanId?: string;
   readonly remediationPlanDisposition?: RuntimeDriftRemediationPlan["disposition"];
   readonly createdAt: string;
@@ -100,7 +100,7 @@ export class MemoryRuntimePostureResponseStore implements RuntimePostureResponse
   }
 }
 
-export interface RuntimeDriftRemediationPlanProvider {
+export interface RuntimePostureRemediationPlanProvider {
   plan(assessmentId: string, remediationPlanId: string): Promise<RuntimeDriftRemediationPlan>;
 }
 
@@ -155,6 +155,12 @@ function worstAction(decisions: readonly RuntimePosturePolicyDecision[]): Runtim
   );
 }
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return "unknown error";
+}
+
 /**
  * Evaluate immutable M26 posture through ordered caller-supplied policies.
  * Policies can request governed M24 remediation planning, but this catalog never
@@ -165,7 +171,7 @@ export class RuntimePostureResponseCatalog {
     private readonly snapshots: RuntimePostureSnapshotStore,
     private readonly responses: RuntimePostureResponseStore,
     private readonly policies: RuntimePosturePolicyRegistry,
-    private readonly remediation?: RuntimeDriftRemediationPlanProvider,
+    private readonly remediation?: RuntimePostureRemediationPlanProvider,
     private readonly clock: RuntimePostureResponseClock = () => new Date(),
   ) {}
 
@@ -194,11 +200,10 @@ export class RuntimePostureResponseCatalog {
         validatePolicyResult(policy.id, result);
         decisions.push({ policyId: policy.id, ...clone(result) });
       } catch (error) {
-        const message = error instanceof Error && error.message.trim() ? error.message : String(error);
         decisions.push({
           policyId: policy.id,
           action: "review",
-          message: `Policy failed closed: ${message}`,
+          message: `Policy failed closed: ${errorMessage(error)}`,
         });
       }
     }
@@ -215,14 +220,24 @@ export class RuntimePostureResponseCatalog {
         });
         disposition = "review";
       } else {
-        remediationPlan = await this.remediation.plan(snapshot.assessmentId, request.remediationPlanId);
-        if (remediationPlan.disposition !== "remediate" || !remediationPlan.executionPlan) {
+        try {
+          remediationPlan = await this.remediation.plan(snapshot.assessmentId, request.remediationPlanId);
+          if (remediationPlan.disposition !== "remediate" || !remediationPlan.executionPlan) {
+            decisions.push({
+              policyId: "$framework",
+              action: "review",
+              message: `M24 remediation planning returned '${remediationPlan.disposition}' instead of an executable remediation plan.`,
+            });
+            disposition = "review";
+          }
+        } catch (error) {
           decisions.push({
             policyId: "$framework",
             action: "review",
-            message: `M24 remediation planning returned '${remediationPlan.disposition}' instead of an executable remediation plan.`,
+            message: `M24 remediation planning failed closed: ${errorMessage(error)}`,
           });
           disposition = "review";
+          remediationPlan = undefined;
         }
       }
     }
