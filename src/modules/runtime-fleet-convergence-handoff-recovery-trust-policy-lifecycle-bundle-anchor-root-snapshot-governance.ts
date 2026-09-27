@@ -230,8 +230,7 @@ export function replayRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExt
 
   const ordered = [...events].sort((a, b) => a.revision - b.revision || a.eventId.localeCompare(b.eventId));
   let state: RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExternalTrustRootSnapshotGovernanceState | null = null;
-  for (let index = 0; index < ordered.length; index += 1) {
-    const event = ordered[index];
+  for (const [index, event] of ordered.entries()) {
     validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExternalTrustRootSnapshotGovernanceEventRecord(event);
     if (event.snapshotId !== snapshotId) throw new MetadataError(`Governance event '${event.eventId}' belongs to another snapshot.`);
     const expectedRevision = index + 1;
