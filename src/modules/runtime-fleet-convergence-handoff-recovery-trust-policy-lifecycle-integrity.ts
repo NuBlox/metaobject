@@ -5,6 +5,7 @@ import type {
   RuntimeFleetHandoffRecoveryEvidenceTrustPolicySnapshotStore,
 } from "./runtime-fleet-convergence-handoff-recovery-trust-policy-snapshot.js";
 import {
+  digestTrustPolicy,
   validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicySnapshotRecord,
 } from "./runtime-fleet-convergence-handoff-recovery-trust-policy-snapshot.js";
 import type {
@@ -257,7 +258,7 @@ export class RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleIntegrityCat
       if (snapshot.policyId !== policyId || snapshot.policyVersion !== event.policyVersion) {
         throw new MetadataError(`Lifecycle event '${event.eventId}' does not match M52 snapshot '${event.snapshotId}'.`);
       }
-      const actualPolicyDigest = await sha256Hex(canonicalizeJson(snapshot.policy));
+      const actualPolicyDigest = await digestTrustPolicy(snapshot.policy);
       if (actualPolicyDigest !== snapshot.policyDigest) {
         throw new MetadataError(`M52 snapshot '${snapshot.snapshotId}' policy digest is invalid.`);
       }
