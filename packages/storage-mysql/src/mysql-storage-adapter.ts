@@ -11,10 +11,13 @@ import {
   type StorageBatchWrite,
 } from "@nublox/metaobject";
 import { decodeRecord, encodeRecord } from "./codec.js";
+import {
+  migrateMySqlStorageSchema,
+  type MySqlSchemaMigrationOptions,
+} from "./migrations.js";
 import { compileMySqlObjectQueryPlan } from "./query-compiler.js";
 import {
   DEFAULT_MYSQL_STORAGE_TABLE,
-  createStorageTableSql,
   quoteSqlIdentifier,
   validateSqlIdentifier,
 } from "./schema.js";
@@ -45,6 +48,8 @@ interface VersionRow extends Record<string, unknown> {
 
 export interface MySqlStorageAdapterOptions {
   readonly tableName?: string;
+  /** Schema migration ledger/locking configuration used by initialize(). */
+  readonly migrations?: MySqlSchemaMigrationOptions;
   /**
    * Options forwarded to @nublox/mysql for atomic batch transactions.
    * Transient deadlock/lock-timeout retries default to 2 unless overridden.
@@ -149,32 +154,19 @@ function compare(left: unknown, right: unknown): number {
 
 function matches(value: unknown, filter: QueryFilter): boolean {
   switch (filter.operator) {
-    case "eq":
-      return Object.is(value, filter.value);
-    case "neq":
-      return !Object.is(value, filter.value);
-    case "gt":
-      return compare(value, filter.value) > 0;
-    case "gte":
-      return compare(value, filter.value) >= 0;
-    case "lt":
-      return compare(value, filter.value) < 0;
-    case "lte":
-      return compare(value, filter.value) <= 0;
-    case "in":
-      return Array.isArray(filter.value) && filter.value.some((item) => Object.is(value, item));
-    case "notIn":
-      return Array.isArray(filter.value) && !filter.value.some((item) => Object.is(value, item));
-    case "contains":
-      return typeof value === "string" && typeof filter.value === "string" && value.includes(filter.value);
-    case "startsWith":
-      return typeof value === "string" && typeof filter.value === "string" && value.startsWith(filter.value);
-    case "endsWith":
-      return typeof value === "string" && typeof filter.value === "string" && value.endsWith(filter.value);
-    case "isNull":
-      return value === null || value === undefined;
-    case "isNotNull":
-      return value !== null && value !== undefined;
+    case "eq": return Object.is(value, filter.value);
+    case "neq": return !Object.is(value, filter.value);
+    case "gt": return compare(value, filter.value) > 0;
+    case "gte": return compare(value, filter.value) >= 0;
+    case "lt": return compare(value, filter.value) < 0;
+    case "lte": return compare(value, filter.value) <= 0;
+    case "in": return Array.isArray(filter.value) && filter.value.some((item) => Object.is(value, item));
+    case "notIn": return Array.isArray(filter.value) && !filter.value.some((item) => Object.is(value, item));
+    case "contains": return typeof value === "string" && typeof filter.value === "string" && value.includes(filter.value);
+    case "startsWith": return typeof value === "string" && typeof filter.value === "string" && value.startsWith(filter.value);
+    case "endsWith": return typeof value === "string" && typeof filter.value === "string" && value.endsWith(filter.value);
+    case "isNull": return value === null || value === undefined;
+    case "isNotNull": return value !== null && value !== undefined;
   }
 }
 
@@ -182,12 +174,14 @@ export class MySqlStorageAdapter implements StorageAdapter {
   readonly #pool: mysql.PromisePool;
   readonly #tableName: string;
   readonly #table: string;
+  readonly #migrationOptions: MySqlSchemaMigrationOptions;
   readonly #transactionOptions: mysql.TransactionOptions;
 
   constructor(pool: mysql.PromisePool, options: MySqlStorageAdapterOptions = {}) {
     this.#pool = pool;
     this.#tableName = validateSqlIdentifier(options.tableName ?? DEFAULT_MYSQL_STORAGE_TABLE);
     this.#table = quoteSqlIdentifier(this.#tableName);
+    this.#migrationOptions = options.migrations ?? {};
     const transaction = options.transaction ?? {};
     this.#transactionOptions = {
       ...transaction,
@@ -195,12 +189,10 @@ export class MySqlStorageAdapter implements StorageAdapter {
     };
   }
 
-  get tableName(): string {
-    return this.#tableName;
-  }
+  get tableName(): string { return this.#tableName; }
 
   async initialize(): Promise<void> {
-    await this.#pool.query(createStorageTableSql(this.#tableName));
+    await migrateMySqlStorageSchema(this.#pool, this.#tableName, this.#migrationOptions);
   }
 
   async insert(snapshot: ObjectSnapshot): Promise<ObjectSnapshot> {
@@ -224,15 +216,12 @@ export class MySqlStorageAdapter implements StorageAdapter {
       seen.add(key);
     }
     if (writes.length === 0) return [];
-
     return this.#pool.withTransaction(async (connection) => {
       const results: ObjectSnapshot[] = [];
       for (const write of writes) {
-        results.push(
-          write.kind === "insert"
-            ? await this.#insert(connection, write.snapshot)
-            : await this.#update(connection, write.snapshot, write.expectedVersion),
-        );
+        results.push(write.kind === "insert"
+          ? await this.#insert(connection, write.snapshot)
+          : await this.#update(connection, write.snapshot, write.expectedVersion));
       }
       return results;
     }, this.#transactionOptions);
@@ -246,7 +235,6 @@ export class MySqlStorageAdapter implements StorageAdapter {
       [identity.type, identity.id, expectedVersion],
     );
     if ((result.affectedRows ?? 0) > 0) return;
-
     const actualVersion = await this.#getVersion(this.#pool, identity);
     if (actualVersion === null) return;
     throw new ConcurrencyError(
@@ -270,11 +258,7 @@ export class MySqlStorageAdapter implements StorageAdapter {
     validateObjectKeyPart(query.objectType, "type");
     const plan = compileMySqlObjectQueryPlan(this.#tableName, query);
     const [rows] = await this.#pool.execute<SnapshotRow[]>(plan.sql, [...plan.parameters]);
-
     let results = rows.map(rowToSnapshot);
-    // Reapply every predicate after decoding as a semantic defence-in-depth
-    // check. SQL push-down is candidate reduction, never a change to the
-    // StorageAdapter contract.
     for (const filter of query.where ?? []) {
       results = results.filter((item) => matches(item.values[filter.attribute], filter));
     }
@@ -284,7 +268,6 @@ export class MySqlStorageAdapter implements StorageAdapter {
         return sort.direction === "desc" ? -result : result;
       });
     }
-
     if (plan.paginationPushed) return results;
     const offset = query.offset ?? 0;
     const end = query.limit === undefined ? undefined : offset + query.limit;
@@ -298,46 +281,24 @@ export class MySqlStorageAdapter implements StorageAdapter {
         `INSERT INTO ${this.#table}
           (object_type, object_id, schema_version, version, values_json, relationships_json)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          stored.type,
-          stored.id,
-          stored.schemaVersion,
-          stored.version,
-          encodeRecord(stored.values),
-          encodeRecord(stored.relationships as Readonly<Record<string, unknown>>),
-        ],
+        [stored.type, stored.id, stored.schemaVersion, stored.version, encodeRecord(stored.values), encodeRecord(stored.relationships as Readonly<Record<string, unknown>>)],
       );
     } catch (error) {
-      if (mysqlErrorCode(error) === "ER_DUP_ENTRY") {
-        throw new ConcurrencyError(`Object '${objectKey(snapshot)}' already exists.`);
-      }
+      if (mysqlErrorCode(error) === "ER_DUP_ENTRY") throw new ConcurrencyError(`Object '${objectKey(snapshot)}' already exists.`);
       throw error;
     }
     return structuredClone(stored);
   }
 
-  async #update(
-    executor: SqlExecutor,
-    snapshot: ObjectSnapshot,
-    expectedVersion: number,
-  ): Promise<ObjectSnapshot> {
+  async #update(executor: SqlExecutor, snapshot: ObjectSnapshot, expectedVersion: number): Promise<ObjectSnapshot> {
     const stored: ObjectSnapshot = { ...snapshot, version: expectedVersion + 1 };
     const [result] = await executor.execute<mysql.OkPacket>(
       `UPDATE ${this.#table}
        SET schema_version = ?, version = ?, values_json = ?, relationships_json = ?
        WHERE object_type = ? AND object_id = ? AND version = ?`,
-      [
-        stored.schemaVersion,
-        stored.version,
-        encodeRecord(stored.values),
-        encodeRecord(stored.relationships as Readonly<Record<string, unknown>>),
-        stored.type,
-        stored.id,
-        expectedVersion,
-      ],
+      [stored.schemaVersion, stored.version, encodeRecord(stored.values), encodeRecord(stored.relationships as Readonly<Record<string, unknown>>), stored.type, stored.id, expectedVersion],
     );
     if ((result.affectedRows ?? 0) > 0) return structuredClone(stored);
-
     const actualVersion = await this.#getVersion(executor, snapshot);
     if (actualVersion === null) throw new ConcurrencyError(`Object '${objectKey(snapshot)}' no longer exists.`);
     throw new ConcurrencyError(

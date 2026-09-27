@@ -10,10 +10,13 @@ import {
   type NormalizedMetadataSnapshot,
 } from "@nublox/metaobject";
 import { decodeRecord, encodeRecord } from "./codec.js";
+import {
+  migrateMySqlMetadataSchema,
+  type MySqlSchemaMigrationOptions,
+} from "./migrations.js";
 import { DEFAULT_MYSQL_TRANSACTION_RETRIES } from "./mysql-storage-adapter.js";
 import {
   DEFAULT_MYSQL_METADATA_TABLE,
-  createMetadataTableSql,
   validateMetadataObjectTypeId,
   validateMetadataObjectTypeVersion,
   validateMetadataTableName,
@@ -49,6 +52,8 @@ interface MetadataStateRow extends Record<string, unknown> {
 
 export interface MySqlMetadataStoreOptions {
   readonly tableName?: string;
+  /** Schema migration ledger/locking configuration used by initialize(). */
+  readonly migrations?: MySqlSchemaMigrationOptions;
   /**
    * Options forwarded to @nublox/mysql for metadata write transactions.
    * Transient deadlock/lock-timeout retries default to 2 unless overridden.
@@ -142,8 +147,6 @@ function validateMetadataRecord(record: MetadataRecord): void {
   validateMetadataTimestamp(record.createdAt, "createdAt");
   validateMetadataTimestamp(record.updatedAt, "updatedAt");
   validateSnapshotShape(record.snapshot, objectTypeId, version);
-  // Run the bounded M70 codec before any SQL write so unsupported/cyclic metadata
-  // fails before a transaction mutates persistent state.
   encodeRecord(record.snapshot as unknown as Readonly<Record<string, unknown>>);
 }
 
@@ -169,12 +172,14 @@ export class MySqlMetadataStore implements MetadataStore {
   readonly #pool: mysql.PromisePool;
   readonly #tableName: string;
   readonly #table: string;
+  readonly #migrationOptions: MySqlSchemaMigrationOptions;
   readonly #transactionOptions: mysql.TransactionOptions;
 
   constructor(pool: mysql.PromisePool, options: MySqlMetadataStoreOptions = {}) {
     this.#pool = pool;
     this.#tableName = validateMetadataTableName(options.tableName ?? DEFAULT_MYSQL_METADATA_TABLE);
     this.#table = quoteSqlIdentifier(this.#tableName);
+    this.#migrationOptions = options.migrations ?? {};
     const transaction = options.transaction ?? {};
     this.#transactionOptions = {
       ...transaction,
@@ -187,7 +192,7 @@ export class MySqlMetadataStore implements MetadataStore {
   }
 
   async initialize(): Promise<void> {
-    await this.#pool.query(createMetadataTableSql(this.#tableName));
+    await migrateMySqlMetadataSchema(this.#pool, this.#tableName, this.#migrationOptions);
   }
 
   async get(objectTypeId: string, version: number): Promise<MetadataRecord | null> {
@@ -289,17 +294,11 @@ export class MySqlMetadataStore implements MetadataStore {
     expectedRevision?: number,
   ): Promise<MetadataRecord> {
     const key = metadataKey(record.objectTypeId, record.objectTypeVersion);
-    const current = await this.#getStateForUpdate(
-      executor,
-      record.objectTypeId,
-      record.objectTypeVersion,
-    );
+    const current = await this.#getStateForUpdate(executor, record.objectTypeId, record.objectTypeVersion);
 
     if (!current) {
       if (expectedRevision !== undefined && expectedRevision !== 0) {
-        throw new ConcurrencyError(
-          `Metadata '${key}' does not exist at expected revision ${expectedRevision}.`,
-        );
+        throw new ConcurrencyError(`Metadata '${key}' does not exist at expected revision ${expectedRevision}.`);
       }
       const inserted: MetadataRecord = { ...record, revision: 1 };
       try {
