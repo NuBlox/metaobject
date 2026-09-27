@@ -44,6 +44,7 @@ export * from "./modules/runtime-fleet-convergence-handoff-recovery-signature.js
 export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust.js";
 export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust-policy-snapshot.js";
 export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust-policy-lifecycle.js";
+export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust-policy-lifecycle-integrity.js";
 export {
   MemoryRuntimeFleetConvergenceFairnessStore,
   RuntimeFleetConvergenceFairnessCatalog,
