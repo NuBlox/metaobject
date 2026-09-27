@@ -2,25 +2,19 @@
 
 A standalone, application-agnostic metadata-driven object model and runtime for TypeScript.
 
-`@nublox/metaobject` turns object metadata into runtime objects with type enforcement, validation, relationships, change tracking, database-neutral querying, versioned metadata persistence, reproducible code generation, schema evolution planning, governed metadata releases and persistent versioned metadata modules. It has no dependency on NuBlox application products or on any database engine.
+`@nublox/metaobject` turns metadata into runtime object semantics and provides database-neutral contracts for persistence, querying, schema evolution, governed releases, exact runtime reconstruction, deployment control, drift/remediation, fleet convergence and evidence/trust verification.
 
-## Design principles
+It deliberately contains no NuBlox product UI, tenant/business-domain model or database driver.
 
-- **Metadata is the source of truth.** Object definitions describe attributes, types, relationships, constraints, behaviours and indexes.
-- **Compile-time and runtime models coexist.** Literal metadata can infer TypeScript shapes; JSON/database metadata receives the same runtime validation.
-- **Storage is pluggable.** Core exposes storage contracts rather than embedding MySQL, PostgreSQL or another database.
-- **Relationships are first-class.** `ObjectGraph` coordinates bidirectional relationship semantics.
-- **Behaviours remain serializable.** Metadata stores stable handler names; executable functions live in registries.
-- **Queries are database-neutral.** Rich query planning sits above storage and can later be pushed down by adapters.
-- **Metadata persistence is normalized.** Definitions flatten into database-ready metadata records.
-- **Generated artifacts are reproducible.** TypeScript, validators, JSON Schema and adapter artifacts are regenerated from metadata rather than becoming a second source of truth.
-- **Schema evolution is semantic.** Version changes are classified by compatibility and translated into portable migration plans.
-- **Releases are gated.** Breaking changes, blocking migrations and optimistic draft revisions are enforced before publication.
-- **Modules make dependencies explicit.** Capability-level metadata releases declare exact object versions and version-ranged module dependencies.
-- **Released module graphs are durable.** Published modules persist the exact dependency versions actually used by a release.
-- **Interrupted releases are recoverable.** A durable `releasing` state preserves the exact locked manifest while metadata publication is atomic at the store boundary.
-- **Runtime schemas are lockable.** Module-set lockfiles preserve exact module and object-type versions for reproducible environments.
-- **Optimistic concurrency is explicit.** Runtime objects, metadata drafts and module drafts use version/revision checks.
+## Current status
+
+The package is in release-candidate hardening. Implemented work now covers M0–M65; M66 documentation convergence, M67 adversarial hardening and M68 `v1.0.0-rc.1` remain in the finite RC plan.
+
+Public API generation: `METAOBJECT_PUBLIC_API_VERSION === "1"`.
+
+Supported Node.js versions: **20, 22 and 24**.
+
+The package is currently **UNLICENSED**. Public npm publication is intentionally deferred until NuBlox explicitly chooses a distribution/licence posture.
 
 ## Quick start
 
@@ -61,121 +55,109 @@ const person = factory.create(Person, { firstName: "Stephen", age: 41 });
 await repository.save(person);
 ```
 
-## Built-in attribute types
+## Architecture at a glance
 
-`string`, `integer`, `number`, `decimal`, `boolean`, `date`, `datetime`, `uuid`, `json`, and `binary` are included. Additional types implement `AttributeType<T>` and register through `TypeRegistry`.
-
-## Relationship engine
-
-M1 adds one-to-one, one-to-many, many-to-one and many-to-many relationships, inverse synchronization, ownership, ordering, required relationships, change tracking, graph navigation, referential integrity, batch persistence and explicit `restrict` / `cascade` / `detach` delete policies.
-
-M2 adds single inheritance, abstract/sealed types, lineage, subtype-compatible relationships, aggregation, composition and exclusive composite-parent lifecycle semantics. See `docs/inheritance-composition.md`.
-
-## Constraints and behaviours
-
-M3 adds custom constraints, cross-field rules, severity-aware validation, computed attributes, operations, hooks, declared domain events and inherited behaviour metadata. See `docs/constraints-behaviors.md`.
-
-## Query engine
-
-M4 adds `MetaQuery`, `QueryPlanner` and `QueryEngine` while retaining the original flat `ObjectQuery` storage contract. Supported capabilities include recursive logical groups, relationship paths, projections, aliases, aggregates, stable cursor pagination, explicit null ordering and subtype expansion. See `docs/query-engine.md`.
-
-## Metadata persistence
-
-M6 provides a database-neutral normalized catalogue with `draft`, `published` and `deprecated` lifecycle states, optimistic revisions, batch publication, portable bundle import/export and runtime-registry reconstruction. See `docs/metadata-persistence.md`.
-
-## Code generation
-
-M7 provides reproducible TypeScript interfaces/create-inputs/classes, dependency-free validators, JSON Schema draft 2020-12 and normalized metadata snapshot artifacts. `ArtifactGeneratorRegistry` is the extension point for adapter-specific generators. See `docs/code-generation.md`.
-
-## Schema evolution
-
-M8 compares versions semantically and classifies changes as `compatible`, `requires-migration`, or `breaking`. `MigrationPlanner` emits portable validation, backfill, transformation, index, cleanup and manual-review steps. See `docs/schema-evolution.md`.
-
-## Metadata release pipeline
-
-M9 coordinates metadata persistence, evolution and generation into governed single or batch releases. It enforces breaking-change approval, blocking migration execution and exact draft-revision stability before publication. See `docs/metadata-release-pipeline.md`.
-
-## Metadata modules
-
-M10 groups exact object-type versions into versioned capability modules with explicit dependency ranges. The registry resolves highest-compatible dependency versions, rejects cycles and diamond version conflicts, validates object-type ownership and releases module members through the M9 batch pipeline. See `docs/metadata-modules.md`.
-
-## Persistent module catalogue
-
-M11 makes module definitions and released dependency locks durable.
-
-```ts
-const moduleCatalog = new MetadataModuleCatalog(
-  new MemoryMetadataModuleStore(),
-);
-
-const draft = await moduleCatalog.saveDraft(moduleDefinition);
-const modules = await moduleCatalog.createPublishedRegistry();
+```text
+metadata + types
+      |
+      v
+runtime objects / relationships / validation
+      |
+      v
+repository + query engine
+      |
+      +--> StorageAdapter
+      |
+      v
+metadata persistence / evolution / release
+      |
+      v
+modules / lockfiles / runtime profiles
+      |
+      v
+governed deployment / attestations / drift / posture
+      |
+      v
+fleet reconciliation / convergence / recovery
+      |
+      v
+integrity / signatures / trust policy / external trust roots
 ```
 
-The catalogue provides:
+See [`docs/architecture.md`](docs/architecture.md) and [`docs/index.md`](docs/index.md).
 
-- pluggable `MetadataModuleStore`
-- optimistic draft revisions
-- `draft` / `published` / `deprecated` lifecycle
-- version progression checks
-- released-manifest verification
-- dependency-safe deprecation
-- reconstruction of every published module version for correct range resolution
-- portable `nublox-metaobject-modules` bundles
-- full prevalidation of published bundle manifests before any import writes
-- historical dependency locks that remain valid after newer compatible modules are published
+## Implemented capability groups
 
-See `docs/module-catalog.md`.
+### Metadata and runtime
 
-## Transactional module release
+- metadata definitions and compile-time inference;
+- extensible attribute type registry;
+- runtime type enforcement and validation;
+- first-class relationships;
+- inheritance, abstract/sealed types and composition;
+- behaviour/constraint registries, computed attributes, operations, events and lifecycle hooks;
+- dirty/change tracking, deterministic snapshots and optimistic concurrency.
 
-M12 coordinates durable module state with atomic metadata-member publication.
+### Query and persistence
 
-```ts
-const releases = new PersistentMetadataModuleReleaseManager(
-  moduleCatalog,
-  metadataCatalog,
-  metadataReleaseManager,
-);
+- database-neutral `ObjectQuery` storage contract;
+- richer `MetaQuery`, planning, traversal, projection, aggregation and cursor pagination;
+- `StorageAdapter` and `MetadataStore` abstractions;
+- normalized metadata persistence;
+- atomic batch writes and optimistic revisions;
+- reusable M64 adapter-conformance suites.
 
-await releases.release("workforce", 2, {
-  approveBreaking: true,
-  migrationExecutor,
-});
-```
+### Code generation, evolution and release
 
-A release is locked as `releasing` before migrations begin. The exact module manifest is persisted at that point. Metadata members are then published through the atomic `MetadataStore.saveBatch()` contract and the module is completed as `published` only after the whole member graph succeeds.
+- TypeScript interfaces/create-inputs/model wrappers;
+- generated validators and JSON Schema;
+- semantic schema diff and portable migration plans;
+- governed metadata release pipeline with breaking/manual-review gates;
+- adapter/application migration extension points.
 
-If processing fails after the lock is acquired, the module deliberately remains `releasing`. `abort()` can return it to draft only before any member has been published; `recover()` completes an interrupted release only after every member is published. See `docs/transactional-module-release.md`.
+### Modules and reproducible runtime configuration
 
-## Runtime module sets
+- versioned metadata modules and dependency ranges;
+- persistent module catalogue with locked historical manifests;
+- transactional/recoverable module release;
+- exact runtime module-set lockfiles;
+- persistent runtime profiles and profile-upgrade planning.
 
-M13 resolves one or more published root-module requirements into an exact, portable runtime lockfile.
+### Deployment, verification and runtime posture
 
-```ts
-const resolver = new MetadataModuleSetResolver(
-  moduleCatalog,
-  metadataCatalog,
-  typeRegistry,
-);
+- persistent deployment runs and durable step leases;
+- keyed/reconciled external executor contracts;
+- append-only deployment journal;
+- preflight policy gates;
+- immutable post-deployment attestations;
+- drift baselines/assessments;
+- remediation planning and closure verification;
+- continuous runtime posture and governed control cycles.
 
-const lockfile = await resolver.resolve([
-  { moduleId: "workforce", minimumVersion: 2 },
-  { moduleId: "assets", minimumVersion: 3, maximumVersion: 5 },
-]);
+### Fleet convergence and recovery
 
-const objectTypes = await resolver.buildObjectTypeRegistry(lockfile);
-```
+- runtime registry and desired/observed separation;
+- fleet control/reconciliation evidence;
+- durable convergence work;
+- executor, dispatch, queue-policy and fairness layers;
+- reservation leases, non-expiring handoff locks and cancellation fences;
+- explicit handoff recovery policy, manual resolution and execution receipts;
+- recovery-chain attestation.
 
-Root requirements resolve against published module versions, but transitive dependencies always follow each selected module's persisted release manifest exactly. This prevents a historical module from silently drifting to a newer compatible dependency after publication.
+### Integrity and trust
 
-Module-set validation rejects exact-version conflicts between roots, altered dependency/member locks, missing exact dependencies, unreachable modules and duplicate object-type ownership. The resulting `ObjectTypeRegistry` is reconstructed from the exact published object-type versions recorded in the lockfile. See `docs/runtime-module-sets.md`.
+- deterministic canonical recovery-evidence digests;
+- externally supplied signature providers;
+- signer/quorum trust policies;
+- immutable policy snapshots and lifecycle integrity/signatures;
+- portable historical lifecycle trust bundles;
+- external bundle anchors;
+- immutable external trust-root snapshots;
+- root governance, recoverable rotation/supersession and authoritative chain resolution.
 
-## Storage model
+## Storage adapters
 
-The core package defines `StorageAdapter` with insert, update, delete, get and query operations. `MemoryStorageAdapter` is the reference implementation and test harness.
-
-Database-specific adapters remain separate packages:
+Core contains the `StorageAdapter` contract and `MemoryStorageAdapter` reference implementation. Database-specific adapters remain separate packages, for example:
 
 ```text
 @nublox/metaobject-storage-mysql
@@ -183,59 +165,62 @@ Database-specific adapters remain separate packages:
 @nublox/metaobject-storage-sqlite
 ```
 
-## Implemented scope
+External implementations should run:
 
-The standalone kernel now includes metadata definitions and validation; compile-time inference; extensible attribute types; runtime objects; first-class relationships; inheritance/composition; extensible constraints and behaviours; dirty tracking; serialization; optimistic concurrency; database-neutral querying; normalized metadata persistence; governed publication; portable metadata bundles; TypeScript/validator/JSON Schema generation; semantic schema evolution; portable migration planning; single/batch release coordination; versioned metadata modules; dependency resolution; module-wide releases; a durable module catalogue with locked historical manifests; atomic metadata publication batches; durable release locks; interrupted-module release recovery; and exact runtime module-set lockfiles with deterministic object-registry reconstruction.
+```ts
+runStorageAdapterConformance(...)
+runMetadataStoreConformance(...)
+```
 
-## Roadmap
+See [`docs/storage-adapter-conformance.md`](docs/storage-adapter-conformance.md).
 
-### M1 — Relationship engine ✅
-Implemented: inverse synchronization, referential integrity, ownership metadata, collection mutation, graph navigation, batch persistence and delete policies.
+## Public API compatibility
 
-### M2 — Inheritance and composition ✅
-Implemented: resolved base types, inherited metadata, abstract/sealed semantics, lineage/type queries, subtype-compatible relationships, compile-time derived inference and exclusive composition lifecycle rules.
+The supported v1 compatibility boundary is the package root:
 
-### M3 — Constraint and behaviour registry ✅
-Implemented: custom constraints, cross-field rules, severity-aware validation, computed attributes, runtime behaviour registries, hooks, events, operations and inherited behaviour metadata.
+```ts
+import { defineObjectType } from "@nublox/metaobject";
+```
 
-### M4 — Query engine ✅
-Implemented: logical groups, relationship traversal, projections, aggregates, cursor pagination, subtype expansion and metadata-aware planning.
+Deep imports from generated `dist/**` paths are not public contracts. Compatibility expectations and error semantics are documented in [`docs/public-api.md`](docs/public-api.md).
 
-### M5 — SQL storage adapters
-External package milestone. Begin with MySQL while keeping database drivers outside this core package.
+## End-to-end workflows
 
-### M6 — Metadata persistence ✅
-Implemented: normalized metadata rows, versioned store contract, optimistic catalogue revisions, lifecycle states, batch publication, runtime-registry loading and portable bundles.
-
-### M7 — Code generation ✅
-Implemented: TypeScript interfaces/create-inputs/classes, generated validators, JSON Schema, metadata artifacts and an adapter-extensible artifact generator registry.
-
-### M8 — Schema evolution ✅
-Implemented: semantic version diffs, compatibility classification, catalogue-backed comparisons, portable migration plans and adapter/application migration hooks.
-
-### M9 — Metadata release pipeline ✅
-Implemented: single and batch release preparation, migration execution gates, explicit breaking-change approval, optimistic release locking, publication coordination and generated release artifacts.
-
-### M10 — Metadata modules ✅
-Implemented: versioned module definitions, dependency ranges, deterministic dependency resolution, cycle/version-conflict detection, explicit object-type ownership, module manifests and module-wide governed releases.
-
-### M11 — Persistent module catalogue ✅
-Implemented: pluggable module storage, optimistic module revisions, lifecycle management, locked release manifests, dependency-safe deprecation, registry reconstruction and validated portable module bundles.
-
-### M12 — Transactional module release ✅
-Implemented: durable `releasing` locks, exact manifest locking before migrations, atomic metadata-member publication, release recovery and guarded abort semantics.
-
-### M13 — Runtime module sets ✅
-Implemented: multi-root module requirements, exact historical dependency locking, portable module-set lockfiles, cross-root version-conflict detection, lockfile validation and exact runtime object-registry reconstruction.
+Representative workflows for metadata definition/persistence, module release/runtime reconstruction, runtime control, trust verification and adapter conformance are in [`docs/end-to-end-examples.md`](docs/end-to-end-examples.md).
 
 ## Development
 
 ```bash
+npm install
 npm run check
 ```
 
-This runs strict TypeScript checks, compile-time inference tests, builds the package and executes the runtime test suite with Node's built-in test runner.
+Release verification:
+
+```bash
+npm run release:check
+```
+
+`release:check` runs the full test gate, validates npm package contents, builds a real tarball, installs it into a clean consumer and verifies both ESM runtime imports and TypeScript declarations.
+
+CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24.
+
+## RC roadmap
+
+- **M62 — Trust-root chain verification** ✅
+- **M63 — Public API stabilization** ✅
+- **M64 — Storage/adapter conformance** ✅
+- **M65 — Release engineering** ✅
+- **M66 — Documentation convergence** in progress
+- **M67 — Adversarial hardening** next
+- **M68 — `v1.0.0-rc.1`** final RC cut
+
+The finite gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
+
+## Documentation
+
+Use [`docs/index.md`](docs/index.md) as the documentation map.
 
 ## Licensing
 
-The package is currently marked `UNLICENSED`. Choose and add the intended NuBlox licence before public package publication.
+`package.json` is intentionally marked `UNLICENSED` for RC preparation. Repository access does not grant redistribution or reuse rights. Public package publication must not occur until NuBlox explicitly changes the publication/licence decision.
