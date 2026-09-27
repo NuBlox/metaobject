@@ -8,7 +8,7 @@ It deliberately contains no NuBlox product UI, tenant/business-domain model or d
 
 ## Current status
 
-**`v1.0.0-rc.1` is the first v1 release candidate.** The finite M62–M67 hardening plan is complete; M68 freezes that verified scope into the prerelease.
+**`v1.0.0-rc.1` is ready for tagging from an exact green `main` commit.** The finite M62–M68 release-candidate plan is complete.
 
 Public API generation: `METAOBJECT_PUBLIC_API_VERSION === "1"`.
 
@@ -214,7 +214,7 @@ CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24.
 - **M65 — Release engineering** ✅
 - **M66 — Documentation convergence** ✅
 - **M67 — Adversarial hardening** ✅
-- **M68 — `v1.0.0-rc.1`** release-candidate cut
+- **M68 — `v1.0.0-rc.1`** ✅ ready for tag
 
 The finite gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 
