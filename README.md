@@ -166,7 +166,7 @@ The MySQL adapter package lives at [`packages/storage-mysql`](packages/storage-m
 @nublox/metaobject-storage-mysql
 ```
 
-M69 established runtime-object persistence, M70 hardened the production persistence/concurrency boundary, and M71 adds a transactional MySQL `MetadataStore` with optimistic metadata revisions, deterministic filtering/listing, atomic metadata batches and live race/tamper coverage. The package depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free.
+M69 established runtime-object persistence, M70 hardened the production persistence/concurrency boundary, M71 added transactional MySQL metadata persistence, and M72 adds contract-preserving MySQL query translation. SQL-safe equality, membership and null predicates plus eligible pagination are pushed through NuBloxSQL server-side prepared statements; range/string predicates and attribute ordering remain deterministic JavaScript fallbacks where the current core comparison contract cannot yet be proven equivalent to MySQL collation semantics. The package depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free.
 
 Planned siblings remain:
 
@@ -182,7 +182,7 @@ runStorageAdapterConformance(...)
 runMetadataStoreConformance(...)
 ```
 
-See [`docs/storage-adapter-conformance.md`](docs/storage-adapter-conformance.md), [`docs/mysql-storage-m70-hardening.md`](docs/mysql-storage-m70-hardening.md) and [`docs/mysql-metadata-store.md`](docs/mysql-metadata-store.md).
+See [`docs/storage-adapter-conformance.md`](docs/storage-adapter-conformance.md), [`docs/mysql-storage-m70-hardening.md`](docs/mysql-storage-m70-hardening.md), [`docs/mysql-metadata-store.md`](docs/mysql-metadata-store.md) and [`docs/mysql-query-m72-pushdown.md`](docs/mysql-query-m72-pushdown.md).
 
 ## Public API compatibility
 
@@ -213,7 +213,7 @@ npm run release:check
 
 `release:check` runs the full test gate, validates npm package contents, builds a real tarball, installs it into a clean consumer and verifies both ESM runtime imports and TypeScript declarations.
 
-CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The MySQL package has an additional Node.js 22 + MySQL 8.4 job covering both public persistence conformance suites plus M70/M71 race and tamper hardening.
+CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The MySQL package has an additional Node.js 22 + MySQL 8.4 job covering both public persistence conformance suites, M70/M71 race/tamper hardening, and M72 live query-pushdown/fallback equivalence.
 
 ## RC roadmap
 
@@ -227,6 +227,7 @@ CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The
 - **M69 — MySQL storage-adapter foundation** ✅
 - **M70 — Production persistence/concurrency hardening** ✅
 - **M71 — MySQL MetadataStore persistence and transactional metadata revisions** ✅
+- **M72 — MySQL query translation and safe SQL pushdown** ✅
 
 The finite RC gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 
