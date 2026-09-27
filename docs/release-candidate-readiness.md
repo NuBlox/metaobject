@@ -4,15 +4,11 @@ This document defines the finite gate for the first `@nublox/metaobject` v1.0 re
 
 ## Current position
 
-The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, the M49–M62 integrity/trust chain, a stabilized M63 public API, reusable M64 adapter conformance, M65 release engineering, converged M66 documentation, and M67 adversarial hardening.
+M62–M67 hardening is complete. M68 freezes that verified scope as `1.0.0-rc.1`. The release-candidate branch must pass the complete supported-Node and clean-consumer gate before merge; the resulting `main` commit must then pass the same gate before it is tagged.
 
-The remaining milestone is the M68 `v1.0.0-rc.1` cut from a reproducibly green `main` commit.
-
-## Proposed remaining milestones
+## Completed milestones
 
 ### M62 — Trust-root chain verification ✅
-
-Implemented:
 
 - verifies M59 snapshot digests, M60 governance replay and M61 rotation replay as one authority chain;
 - deterministically resolves exactly one active authoritative root;
@@ -21,67 +17,54 @@ Implemented:
 
 ### M63 — Public API stabilization ✅
 
-Implemented:
-
 - establishes the package root as the supported v1 compatibility boundary;
 - documents the supported API categories and deep-import policy;
 - defines the public error hierarchy and message-stability expectations;
 - adds `METAOBJECT_PUBLIC_API_VERSION` as an explicit compatibility-generation marker;
-- adds compile-time consumer-contract tests for root imports, metadata helpers, repository/storage contracts, reference storage and public errors;
+- adds compile-time consumer-contract tests;
 - documents v1 semantic compatibility rules and RC-period change discipline.
 
 ### M64 — Storage/adapter conformance ✅
 
-Implemented:
-
 - exports reusable `StorageAdapter` and `MetadataStore` conformance runners;
-- verifies the reference in-memory implementations against the same public contract external adapters must satisfy;
+- verifies the in-memory reference implementations against the same contract external adapters must satisfy;
 - covers detached reads, optimistic concurrency, atomic batch rollback, request-order results, portable query semantics, filtering and deletion behavior;
-- documents the compatibility boundary for MySQL/PostgreSQL/SQLite and other external adapter packages;
 - keeps database drivers and dialect-specific dependencies outside core.
 
 ### M65 — Release engineering ✅
 
-Implemented:
-
-- deterministic npm package-manifest verification rejects source/test/internal files and requires root runtime/type declarations;
-- clean-consumer verification installs the generated tarball and validates both ESM runtime imports and TypeScript declarations;
-- CI explicitly tests Node.js 20, 22 and 24;
-- GitHub Actions use Node-24-compatible checkout/setup-node majors;
-- `CHANGELOG.md` and release-note conventions are established;
-- publication/licence status is intentionally `UNLICENSED`: no public npm publication until NuBlox explicitly changes that decision.
+- verifies npm package contents;
+- installs the generated tarball into a clean consumer and validates ESM and TypeScript root imports;
+- explicitly tests Node.js 20, 22 and 24;
+- establishes changelog/release-note and release procedures;
+- intentionally retains `UNLICENSED`, preventing public npm publication until NuBlox changes that decision.
 
 ### M66 — Documentation convergence ✅
 
-Implemented:
-
-- README current scope and RC roadmap match the implementation;
-- architecture documentation describes runtime, persistence, modules, deployment, fleet convergence and trust layers;
-- a documentation index groups package docs by architectural concern;
-- end-to-end examples cover metadata, modules, runtime control, trust verification, adapter conformance and release verification;
-- stability, extension-point, package-boundary and publication expectations are linked from the main package documentation.
+- README and architecture documentation match the implemented package;
+- documentation is indexed by architectural concern;
+- end-to-end examples cover metadata, modules, runtime control, trust, adapters and release verification;
+- stability, extension-point, package-boundary and publication expectations are documented.
 
 ### M67 — Adversarial hardening ✅
 
-Implemented:
-
-- audits existing malformed-input, replay and tamper coverage across persistence, journals, portable evidence and trust formats;
-- adds an RC adversarial matrix for M59–M62 duplicate/tampered/missing provenance and canonicalization cases;
-- hardens M60 governance and M61 rotation replay so event timestamps may be equal but can never regress in revision order;
+- audits malformed-input, replay and tamper coverage across persistence, journals, portable evidence and trust formats;
+- adds an RC adversarial matrix for M59–M62;
+- hardens M60 governance and M61 rotation replay against backward timestamp regression;
 - preserves fail-closed behavior for unsupported formats, broken revisions/stages, frozen identity mutation, graph ambiguity and digest mismatch;
-- records the audit conclusion and remaining RC verification boundary in `docs/adversarial-hardening.md`.
+- records the hardening audit in `docs/adversarial-hardening.md`.
 
-### M68 — `v1.0.0-rc.1`
+### M68 — `v1.0.0-rc.1` ✅ candidate prepared
 
-- freeze feature scope;
-- confirm every RC gate on the exact release commit;
-- set package/release metadata to `1.0.0-rc.1`;
-- run the complete supported-Node and clean-consumer release gate;
-- tag the verified green `main` commit as `v1.0.0-rc.1`.
+- feature scope frozen at M67;
+- package version set to `1.0.0-rc.1`;
+- release notes and README updated for the first v1 RC;
+- public npm publication remains disabled under the intentional `UNLICENSED` posture;
+- the candidate must pass the complete release gate on the PR head and again on the merged `main` commit before tagging.
 
 ## RC gate
 
-`v1.0.0-rc.1` is ready only when all of the following are true:
+`v1.0.0-rc.1` is eligible for tagging only when all of the following are true:
 
 - [x] trust-root supersession resolves to one unambiguous current authority;
 - [x] public API surface is reviewed and intentionally exported;
@@ -92,8 +75,12 @@ Implemented:
 - [x] portable evidence formats have adversarial/tamper coverage;
 - [x] no known fail-open trust, lifecycle, concurrency, or persistence defect remains;
 - [x] licence/publication status is intentionally decided;
-- [ ] `main` is green and the RC commit is reproducible.
+- [ ] exact `1.0.0-rc.1` merged `main` commit is green and reproducible.
+
+## Tagging rule
+
+The tag `v1.0.0-rc.1` must point at the exact merged `main` commit whose Node 20/22/24 and package/clean-consumer checks all completed successfully. A green PR head alone is not sufficient for the final tag.
 
 ## Non-blocking post-RC work
 
-The following can remain outside the core RC when implemented in separate packages: database-specific drivers/adapters, application-framework integration, NuBlox product UI, and application-specific domain metadata.
+The following remain outside the core RC when implemented in separate packages: database-specific drivers/adapters, application-framework integration, NuBlox product UI, and application-specific domain metadata.
