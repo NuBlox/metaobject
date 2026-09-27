@@ -8,7 +8,7 @@ It deliberately contains no NuBlox product UI, tenant/business-domain model or d
 
 ## Current status
 
-**`v1.0.0` is the stable v1 release version prepared in this repository.** The currently published npm release remains `v1.0.0-rc.1` under the `next` dist-tag until the exact green `v1.0.0` tag completes the stable publication workflow.
+**`v1.0.0` is the stable v1 release version prepared and fully qualified in this repository.** The currently published npm release remains `v1.0.0-rc.1` under the `next` dist-tag until npm trusted publishing is configured and the exact green `v1.0.0` tag completes the stable publication workflow.
 
 Public API generation: `METAOBJECT_PUBLIC_API_VERSION === "1"`.
 
@@ -234,9 +234,9 @@ CI executes the complete core typecheck/build/test gate on Node.js 20, 22 and 24
 - **M74 — MySQL adapter certification and production-stress hardening** ✅
 - **M75 — MySQL adapter external-consumer and release qualification** ✅
 - **M76 — Publication hardening and trusted-publishing preparation** ✅
-- **M77 — `v1.0.0` stable promotion** 🚧 qualification in progress
+- **M77 — `v1.0.0` stable promotion engineering** ✅
 
-The stable promotion gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md) and [`docs/m77-stable-v1-promotion.md`](docs/m77-stable-v1-promotion.md).
+Stable registry release remains gated on npm trusted-publisher configuration, the exact `v1.0.0` tag and successful registry verification. The release gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md) and [`docs/m77-stable-v1-promotion.md`](docs/m77-stable-v1-promotion.md).
 
 ## Documentation
 
