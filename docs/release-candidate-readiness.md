@@ -4,7 +4,7 @@ This document defines the finite gate for the first `@nublox/metaobject` v1.0 re
 
 ## Current position
 
-M62–M67 hardening is complete. M68 freezes that verified scope as `1.0.0-rc.1`. The release-candidate branch must pass the complete supported-Node and clean-consumer gate before merge; the resulting `main` commit must then pass the same gate before it is tagged.
+M62–M67 hardening is complete. M68 freezes that verified scope as `1.0.0-rc.1`. The release candidate is licensed under Apache-2.0 with copyright held by Stephen J T Spittal. The licensing change must pass the complete supported-Node and clean-consumer gate before merge; the resulting `main` commit must then pass the same gate before it is tagged.
 
 ## Completed milestones
 
@@ -37,7 +37,7 @@ M62–M67 hardening is complete. M68 freezes that verified scope as `1.0.0-rc.1`
 - installs the generated tarball into a clean consumer and validates ESM and TypeScript root imports;
 - explicitly tests Node.js 20, 22 and 24;
 - establishes changelog/release-note and release procedures;
-- intentionally retains `UNLICENSED`, preventing public npm publication until NuBlox changes that decision.
+- makes package publication and licensing an explicit release decision.
 
 ### M66 — Documentation convergence ✅
 
@@ -59,8 +59,9 @@ M62–M67 hardening is complete. M68 freezes that verified scope as `1.0.0-rc.1`
 - feature scope frozen at M67;
 - package version set to `1.0.0-rc.1`;
 - release notes and README updated for the first v1 RC;
-- public npm publication remains disabled under the intentional `UNLICENSED` posture;
-- the candidate must pass the complete release gate on the PR head and again on the merged `main` commit before tagging.
+- package licensed under Apache-2.0 with `LICENSE` and `NOTICE` included in the distributable payload;
+- copyright attribution identifies Stephen J T Spittal;
+- the candidate must pass the complete release gate on the licensing PR head and again on the merged `main` commit before tagging.
 
 ## RC gate
 
@@ -74,12 +75,12 @@ M62–M67 hardening is complete. M68 freezes that verified scope as `1.0.0-rc.1`
 - [x] README and architecture documentation match implemented scope;
 - [x] portable evidence formats have adversarial/tamper coverage;
 - [x] no known fail-open trust, lifecycle, concurrency, or persistence defect remains;
-- [x] licence/publication status is intentionally decided;
-- [ ] exact `1.0.0-rc.1` merged `main` commit is green and reproducible.
+- [x] licence/publication status is intentionally decided: Apache-2.0, copyright © 2026 Stephen J T Spittal;
+- [ ] exact licensed `1.0.0-rc.1` merged `main` commit is green and reproducible.
 
 ## Tagging rule
 
-The tag `v1.0.0-rc.1` must point at the exact merged `main` commit whose Node 20/22/24 and package/clean-consumer checks all completed successfully. A green PR head alone is not sufficient for the final tag.
+The tag `v1.0.0-rc.1` must point at the exact licensed merged `main` commit whose Node 20/22/24 and package/clean-consumer checks all completed successfully. A green PR head alone is not sufficient for the final tag.
 
 ## Non-blocking post-RC work
 

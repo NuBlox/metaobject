@@ -23,11 +23,13 @@ First v1 release candidate for the standalone `@nublox/metaobject` runtime.
 - External trust-root governance, recoverable rotation/supersession and deterministic authoritative-chain resolution.
 - Package-manifest verification, clean ESM/TypeScript consumer verification and Node.js 20/22/24 CI coverage.
 - Release-candidate adversarial/tamper matrix and fail-closed lifecycle replay hardening.
+- Apache License 2.0 distribution terms, with `LICENSE` and `NOTICE` included in the package payload.
 
 ### Changed
 
 - Package version advances from the milestone series to `1.0.0-rc.1`.
 - The package root is the supported v1 compatibility boundary; generated `dist/**` deep imports are not public contracts.
+- Package licence changes from `UNLICENSED` to `Apache-2.0` with copyright held by Stephen J T Spittal.
 
 ### Fixed
 
@@ -35,8 +37,9 @@ First v1 release candidate for the standalone `@nublox/metaobject` runtime.
 
 ### Distribution
 
-- The package remains `UNLICENSED`.
-- This release candidate may be tagged and validated from GitHub, but public npm publication remains intentionally disabled until NuBlox explicitly chooses a distribution/licence posture.
+- `@nublox/metaobject` is licensed under the Apache License, Version 2.0.
+- Copyright © 2026 Stephen J T Spittal.
+- Applying the licence does not itself publish the package; npm publication remains an explicit release operation.
 
 ## 0.67.0
 

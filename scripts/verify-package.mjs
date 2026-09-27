@@ -15,11 +15,12 @@ if (forbidden.length > 0) {
   throw new Error(`Package contains non-public source/build files: ${forbidden.join(", ")}`);
 }
 
-for (const required of ["package.json", "README.md", "dist/index.js", "dist/index.d.ts"]) {
+for (const required of ["package.json", "README.md", "LICENSE", "NOTICE", "dist/index.js", "dist/index.d.ts"]) {
   if (!files.includes(required)) throw new Error(`Package is missing required file '${required}'.`);
 }
 
-const unexpectedTopLevel = files.filter((path) => !path.startsWith("dist/") && path !== "package.json" && path !== "README.md");
+const allowedTopLevel = new Set(["package.json", "README.md", "LICENSE", "NOTICE"]);
+const unexpectedTopLevel = files.filter((path) => !path.startsWith("dist/") && !allowedTopLevel.has(path));
 if (unexpectedTopLevel.length > 0) {
   throw new Error(`Package contains unexpected top-level files: ${unexpectedTopLevel.join(", ")}`);
 }
