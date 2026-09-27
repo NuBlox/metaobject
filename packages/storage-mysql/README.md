@@ -4,7 +4,7 @@ MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented again
 
 ## Status
 
-M71 MySQL metadata persistence. Version `0.3.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
+M72 safe MySQL query pushdown. Version `0.4.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
 
 The package remains inside the `NuBlox/metaobject` monorepo while the MetaObject core remains database-neutral and MySQL-free.
 
@@ -22,6 +22,7 @@ import { createPool } from "@nublox/mysql/promise";
 import {
   MySqlMetadataStore,
   MySqlStorageAdapter,
+  compileMySqlObjectQueryPlan,
 } from "@nublox/metaobject-storage-mysql";
 
 const pool = createPool({
@@ -39,22 +40,17 @@ const metadata = new MySqlMetadataStore(pool);
 
 await storage.initialize();
 await metadata.initialize();
-```
 
-Custom tables and transaction retry policies can be configured independently:
-
-```ts
-const metadata = new MySqlMetadataStore(pool, {
-  tableName: "tenant_42_metadata",
-  transaction: {
-    maxRetries: 3,
-    retryDelayMs: 25,
-    maxRetryDelayMs: 500,
-  },
+const plan = compileMySqlObjectQueryPlan(storage.tableName, {
+  objectType: "example.item",
+  where: [{ attribute: "status", operator: "eq", value: "open" }],
+  limit: 25,
 });
+
+console.log(plan.pushedFilters.length, plan.residualFilters.length);
 ```
 
-Transient MySQL deadlock/lock-timeout failures retry twice by default through `@nublox/mysql`. Optimistic-concurrency failures are not retried as transient lock failures.
+Custom tables and transaction retry policies can be configured independently. Transient MySQL deadlock/lock-timeout failures retry twice by default through `@nublox/mysql`. Optimistic-concurrency failures are not retried as transient lock failures.
 
 ## Runtime object persistence
 
@@ -64,38 +60,39 @@ The bounded lossless codec preserves `Date`, `BigInt`, `undefined`, `NaN`, infin
 
 ## Metadata persistence
 
-M71 adds `MySqlMetadataStore`, backed by a separate InnoDB table keyed by `(object_type_id, object_type_version)`.
-
-Each record stores:
-
-- metadata status (`draft`, `published`, `deprecated`);
-- an optimistic `revision`;
-- the normalized metadata snapshot in the same bounded lossless envelope used by object persistence;
-- exact `createdAt` and `updatedAt` strings from the MetaObject contract.
+`MySqlMetadataStore` is backed by a separate InnoDB table keyed by `(object_type_id, object_type_version)` and implements optimistic metadata revisions, atomic ordered batches, deterministic filtering and fail-closed decoding.
 
 The metadata envelope is stored as validated `LONGTEXT` rather than native MySQL `JSON`, preserving exact record-member order required by the current RC conformance suite while retaining `JSON_VALID(...)` enforcement.
 
-### Metadata guarantees
+## M72 query pushdown
 
-`MySqlMetadataStore` implements the complete RC `MetadataStore` contract:
+`MySqlStorageAdapter.query()` now compiles the SQL-safe subset of `ObjectQuery` and executes it with NuBloxSQL server-side prepared statements through `PromisePool.execute()`.
 
-- first save assigns revision `1`;
-- existing records require the matching expected revision;
-- updates increment revision and preserve the original `createdAt`;
-- `saveBatch` is atomic, ordered and duplicate-key guarded;
-- list filtering by object type/status is deterministic;
-- delete is optimistic and missing delete is idempotent;
-- reads are detached;
-- metadata identity/version is checked against the normalized snapshot;
-- write transactions use row locking plus optimistic revision predicates;
-- concurrent save/save and save/delete races have exactly one winner;
-- semantically tampered stored snapshots fail closed during reads.
+The following predicates are pushed into MySQL while preserving the RC `StorageAdapter` semantics:
 
-CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.4, followed by the M70/M71 race and tamper tests.
+- `eq` and `neq` for persisted primitive values, including `undefined`, `null`, booleans, strings, finite numbers, `NaN`, infinities, negative zero and `BigInt`;
+- `in` and `notIn` using the same `Object.is` semantics as the reference adapter;
+- `isNull` and `isNotNull`, including the distinction between absent attributes, encoded `undefined` and encoded `null`.
 
-## Query strategy
+When every filter is SQL-safe and no attribute sort is requested, non-negative safe-integer `limit`/`offset` pagination is also pushed into MySQL.
 
-Runtime `query()` currently restricts by object type in SQL and applies attribute predicates/order/pagination after decoding snapshots. SQL predicate/order/pagination push-down belongs to the later query-translation milestone.
+Every attribute JSON path is supplied as a bound prepared-statement parameter. Attribute names are never interpolated into SQL text. The adapter decodes returned rows and reapplies the original predicates as a semantic defence-in-depth check.
+
+### Deliberate fallback boundary
+
+The following remain in JavaScript for this RC-compatible milestone:
+
+- `gt`, `gte`, `lt`, `lte`;
+- `contains`, `startsWith`, `endsWith`;
+- attribute `orderBy`.
+
+The core reference adapter currently uses JavaScript `localeCompare()` for string and mixed-type comparison. MySQL collation ordering is not guaranteed to be equivalent. M72 therefore prefers a correct fallback over a faster but observably different SQL result. A future core comparison contract can make those semantics deterministic enough for broader pushdown.
+
+`compileMySqlObjectQueryPlan()` is exported for diagnostics and tests. It reports the generated prepared SQL, parameters, pushed filters, residual filters and whether pagination was pushed.
+
+## Conformance
+
+CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.4, followed by M70/M71 concurrency/tamper tests and M72 live query-equivalence cases.
 
 ## Schema evolution
 
