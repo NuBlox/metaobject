@@ -6,10 +6,17 @@ The project follows Semantic Versioning once the v1 public API is released. Pre-
 
 ## Unreleased
 
+## 0.66.0
+
 ### Added
 
-- Release-engineering verification for package contents and clean consumers.
-- CI coverage for Node.js 20, 22 and 24.
+- Current architecture documentation through M65.
+- Documentation index grouped by architectural concern.
+- End-to-end workflow examples for metadata, modules, runtime control, trust, adapters and release verification.
+
+### Changed
+
+- README scope, compatibility, release and RC-roadmap sections now match the implemented package.
 
 ## 0.65.0
 
