@@ -26,7 +26,7 @@ function signature(signatureId, signerId, algorithm = "ALG", keyId = `${signerId
 
 function fixture(records, validity = {}) {
   const source = {
-    async history({ integrityId }) { return records.filter((item) => item.integrityId === integrityId).map(structuredClone); },
+    async history({ integrityId }) { return records.filter((item) => item.integrityId === integrityId).map((item) => structuredClone(item)); },
     async verify(id) {
       if (validity[id] instanceof Error) throw validity[id];
       const valid = validity[id] ?? true;
