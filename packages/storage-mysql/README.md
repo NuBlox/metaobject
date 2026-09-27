@@ -4,9 +4,9 @@ MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented again
 
 ## Status
 
-M69 foundation package. Version `0.1.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
+M70 production persistence/concurrency hardening. Version `0.2.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
 
-The package is intentionally separate from the MetaObject core runtime. Core remains database-neutral and does not depend on MySQL.
+The package is intentionally separate from the MetaObject core runtime while remaining in the same `NuBlox/metaobject` repository. Core remains database-neutral and does not depend on MySQL.
 
 ## Requirements
 
@@ -39,17 +39,24 @@ await storage.initialize();
 await pool.end();
 ```
 
-A custom table may be selected with a constrained SQL identifier:
+A custom table and transaction retry policy may be selected explicitly:
 
 ```ts
 const storage = new MySqlStorageAdapter(pool, {
   tableName: "tenant_42_metaobjects",
+  transaction: {
+    maxRetries: 3,
+    retryDelayMs: 25,
+    maxRetryDelayMs: 500,
+  },
 });
 ```
 
+Atomic batch transactions retry transient MySQL deadlock/lock-timeout failures twice by default through `@nublox/mysql`; callers may override the transaction options shown above. Optimistic-concurrency failures are not transient MySQL lock errors and are not retried by the default policy.
+
 ## Persistence model
 
-M69 uses one InnoDB table keyed by `(object_type, object_id)`:
+The adapter uses one InnoDB table keyed by `(object_type, object_id)`:
 
 - `schema_version` preserves the MetaObject schema revision bound to the snapshot;
 - `version` implements optimistic object concurrency;
@@ -61,6 +68,21 @@ M69 uses one InnoDB table keyed by `(object_type, object_id)`:
 The envelopes are deliberately stored as text rather than MySQL's native `JSON` type. MySQL normalizes JSON object member ordering, whereas the MetaObject RC conformance boundary requires an exact snapshot round trip including record member order. Validated text preserves the encoded order without weakening JSON validity.
 
 The value codec preserves values that ordinary JSON would silently lose or coerce, including `Date`, `BigInt`, `undefined`, `NaN`, positive/negative infinity and negative zero.
+
+## M70 hardening
+
+M70 closes production-boundary gaps around object persistence and concurrency:
+
+- object type/id lengths and schema-version range are validated before SQL execution;
+- updates fail before overflow beyond JavaScript's safe-integer version range;
+- cyclic object graphs, sparse arrays, accessor-backed values and enumerable symbol-keyed data fail closed;
+- codec traversal is bounded by maximum depth and node count;
+- malformed persisted `Date`, `BigInt` and canonical-number encodings fail closed on read;
+- `__proto__` is decoded as ordinary own data without mutating object prototypes;
+- `saveBatch` uses transient deadlock/lock-timeout retry support from `@nublox/mysql`;
+- live MySQL tests prove that two writers sharing the same expected version have exactly one winner;
+- live update-versus-delete races likewise have exactly one winner;
+- deliberately tampered persisted envelopes are rejected during reads.
 
 ## Contract guarantees
 
@@ -74,11 +96,11 @@ The adapter implements the complete `StorageAdapter` surface from the RC:
 - reads return detached snapshots;
 - the legacy storage query contract supports filtering, ordering, offset and limit with semantics matching the in-memory reference adapter.
 
-CI runs `runStorageAdapterConformance` from the published MetaObject RC against a real MySQL service.
+CI runs `runStorageAdapterConformance` from the published MetaObject RC against a real MySQL 8.4 service, then executes the additional M70 race/tamper tests.
 
 ## Query strategy
 
-M69 deliberately prioritizes semantic equivalence over premature SQL translation. `query()` restricts by object type in SQL and applies attribute predicates/order/pagination after decoding snapshots.
+M69/M70 deliberately prioritize semantic equivalence over premature SQL translation. `query()` restricts by object type in SQL and applies attribute predicates/order/pagination after decoding snapshots.
 
 SQL push-down for supported predicates, deterministic database ordering, pagination planning and indexes belong to the later query-translation milestone. Keeping this boundary explicit prevents MySQL-specific behavior from leaking into the core contract.
 
