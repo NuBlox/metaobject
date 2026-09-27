@@ -150,7 +150,9 @@ test("M62 resolver requires exact M61-created governance linkage", async () => {
   const governanceHistory = await system.governance.history();
   const tamperedGovernance = {
     async history() {
-      return governanceHistory.filter((event) => event.eventId !== "rotation-ab:m60:activate-successor");
+      return governanceHistory.map((event) => event.eventId === "rotation-ab:m60:activate-successor"
+        ? { ...event, eventId: "attacker:activate-successor" }
+        : event);
     },
   };
   const resolver = new RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExternalTrustRootChainResolver(
