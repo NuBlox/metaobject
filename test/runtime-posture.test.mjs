@@ -258,6 +258,6 @@ test("posture rejects evidence and remediation cases from different chains", asy
   });
   await assert.rejects(
     () => capture(parts, "posture-mismatch", other.caseId),
-    /does not originate from assessment/i,
+    /does not originate from the supplied assessment\/baseline\/deployment chain/i,
   );
 });
