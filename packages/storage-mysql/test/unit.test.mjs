@@ -2,43 +2,58 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_MYSQL_METADATA_TABLE,
+  DEFAULT_MYSQL_MIGRATION_TABLE,
   DEFAULT_MYSQL_STORAGE_TABLE,
   DEFAULT_MYSQL_TRANSACTION_RETRIES,
+  MYSQL_IDENTIFIER_MAX_LENGTH,
   MYSQL_METADATA_KEY_MAX_LENGTH,
   MYSQL_METADATA_SCHEMA_VERSION,
+  MYSQL_METADATA_V2_INDEX,
   MYSQL_OBJECT_KEY_MAX_LENGTH,
   MYSQL_SCHEMA_VERSION_MAX,
   MYSQL_STORAGE_SCHEMA_VERSION,
+  MYSQL_STORAGE_V2_INDEX,
   MySqlMetadataStore,
   MySqlStorageAdapter,
   createMetadataTableSql,
+  createMetadataTableV1Sql,
+  createMetadataV2MigrationSql,
   createStorageTableSql,
+  createStorageTableV1Sql,
+  createStorageV2MigrationSql,
   quoteSqlIdentifier,
   validateSqlIdentifier,
 } from "../dist/index.js";
 import { decodeRecord, encodeRecord } from "../dist/codec.js";
 
-test("object and metadata schema DDL are deterministic", () => {
-  assert.equal(MYSQL_STORAGE_SCHEMA_VERSION, 1);
+test("object and metadata schema DDL are deterministic and versioned", () => {
+  assert.equal(MYSQL_STORAGE_SCHEMA_VERSION, 2);
   assert.equal(DEFAULT_MYSQL_STORAGE_TABLE, "metaobject_objects");
+  const objectV1 = createStorageTableV1Sql();
+  assert.match(objectV1, /CREATE TABLE IF NOT EXISTS `metaobject_objects`/);
+  assert.doesNotMatch(objectV1, new RegExp(MYSQL_STORAGE_V2_INDEX));
   const objectSql = createStorageTableSql();
-  assert.match(objectSql, /CREATE TABLE IF NOT EXISTS `metaobject_objects`/);
   assert.match(objectSql, /PRIMARY KEY \(object_type, object_id\)/);
-  assert.match(objectSql, /ENGINE=InnoDB/);
+  assert.match(objectSql, new RegExp(MYSQL_STORAGE_V2_INDEX));
+  assert.match(createStorageV2MigrationSql(), /ALTER TABLE `metaobject_objects`/);
 
-  assert.equal(MYSQL_METADATA_SCHEMA_VERSION, 1);
+  assert.equal(MYSQL_METADATA_SCHEMA_VERSION, 2);
   assert.equal(DEFAULT_MYSQL_METADATA_TABLE, "metaobject_metadata");
+  const metadataV1 = createMetadataTableV1Sql();
+  assert.match(metadataV1, /CREATE TABLE IF NOT EXISTS `metaobject_metadata`/);
+  assert.doesNotMatch(metadataV1, new RegExp(MYSQL_METADATA_V2_INDEX));
   const metadataSql = createMetadataTableSql();
-  assert.match(metadataSql, /CREATE TABLE IF NOT EXISTS `metaobject_metadata`/);
   assert.match(metadataSql, /PRIMARY KEY \(object_type_id, object_type_version\)/);
-  assert.match(metadataSql, /JSON_VALID\(snapshot_json\)/);
-  assert.match(metadataSql, /ENGINE=InnoDB/);
+  assert.match(metadataSql, new RegExp(MYSQL_METADATA_V2_INDEX));
+  assert.match(createMetadataV2MigrationSql(), /ALTER TABLE `metaobject_metadata`/);
+  assert.equal(DEFAULT_MYSQL_MIGRATION_TABLE, "metaobject_schema_migrations");
 });
 
-test("table identifiers are strictly constrained", () => {
+test("table identifiers are strictly constrained to the MySQL limit", () => {
   assert.equal(validateSqlIdentifier("metaobject_tenant_01"), "metaobject_tenant_01");
   assert.equal(quoteSqlIdentifier("metaobject_tenant_01"), "`metaobject_tenant_01`");
   assert.throws(() => validateSqlIdentifier("metaobject;DROP TABLE x"), /Invalid MySQL identifier/);
+  assert.throws(() => validateSqlIdentifier("x".repeat(MYSQL_IDENTIFIER_MAX_LENGTH + 1)), /Invalid MySQL identifier/);
   assert.throws(() => new MySqlStorageAdapter({}, { tableName: "bad-name" }), /Invalid MySQL identifier/);
   assert.throws(() => new MySqlMetadataStore({}, { tableName: "bad-name" }), /Invalid MySQL identifier/);
 });
@@ -99,15 +114,9 @@ test("codec rejects malformed canonical values", () => {
 
 test("object persistence boundaries fail before reaching MySQL", async () => {
   const pool = {
-    query() {
-      throw new Error("database should not be reached");
-    },
-    execute() {
-      throw new Error("database should not be reached");
-    },
-    withTransaction() {
-      throw new Error("database should not be reached");
-    },
+    query() { throw new Error("database should not be reached"); },
+    execute() { throw new Error("database should not be reached"); },
+    withTransaction() { throw new Error("database should not be reached"); },
   };
   const adapter = new MySqlStorageAdapter(pool);
   const snapshot = {
@@ -127,27 +136,15 @@ test("object persistence boundaries fail before reaching MySQL", async () => {
     () => adapter.insert({ ...snapshot, schemaVersion: MYSQL_SCHEMA_VERSION_MAX + 1 }),
     /schemaVersion must be an integer/,
   );
-  await assert.rejects(
-    () => adapter.update(snapshot, Number.MAX_SAFE_INTEGER),
-    /cannot be incremented/,
-  );
-  await assert.rejects(
-    () => adapter.get({ id: "", type: "example.item" }),
-    /must be a non-empty string/,
-  );
+  await assert.rejects(() => adapter.update(snapshot, Number.MAX_SAFE_INTEGER), /cannot be incremented/);
+  await assert.rejects(() => adapter.get({ id: "", type: "example.item" }), /must be a non-empty string/);
 });
 
 test("metadata persistence boundaries fail before reaching MySQL", async () => {
   const pool = {
-    query() {
-      throw new Error("database should not be reached");
-    },
-    execute() {
-      throw new Error("database should not be reached");
-    },
-    withTransaction() {
-      throw new Error("database should not be reached");
-    },
+    query() { throw new Error("database should not be reached"); },
+    execute() { throw new Error("database should not be reached"); },
+    withTransaction() { throw new Error("database should not be reached"); },
   };
   const store = new MySqlMetadataStore(pool);
   const record = {
@@ -186,25 +183,15 @@ test("metadata persistence boundaries fail before reaching MySQL", async () => {
     () => store.save({ ...record, snapshot: { ...record.snapshot, objectType: { ...record.snapshot.objectType, objectTypeId: "wrong" } } }),
     /does not match record/,
   );
-  await assert.rejects(
-    () => store.save({ ...record, status: "invalid" }),
-    /Invalid metadata status/,
-  );
-  await assert.rejects(
-    () => store.save(record, Number.MAX_SAFE_INTEGER),
-    /cannot be incremented/,
-  );
+  await assert.rejects(() => store.save({ ...record, status: "invalid" }), /Invalid metadata status/);
+  await assert.rejects(() => store.save(record, Number.MAX_SAFE_INTEGER), /cannot be incremented/);
 });
 
 test("batch transactions retry transient lock failures by default and remain configurable", async () => {
   const calls = [];
   const connection = {
-    async execute() {
-      return [{ affectedRows: 1 }, undefined];
-    },
-    async query() {
-      return [[], undefined];
-    },
+    async execute() { return [{ affectedRows: 1 }, undefined]; },
+    async query() { return [[], undefined]; },
   };
   const pool = {
     async withTransaction(work, options) {
