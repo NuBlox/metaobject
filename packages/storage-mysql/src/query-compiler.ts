@@ -1,3 +1,4 @@
+import mysqlPromise from "@nublox/mysql/promise";
 import type { ObjectQuery, QueryFilter } from "@nublox/metaobject";
 import { quoteSqlIdentifier } from "./schema.js";
 
@@ -110,7 +111,7 @@ function compileIn(attribute: string, value: unknown, negateResult: boolean): Co
   return negateResult ? negate(joined) : joined;
 }
 
-export function compileMySqlFilter(filter: QueryFilter): CompiledPredicate | null {
+function compileMySqlFilter(filter: QueryFilter): CompiledPredicate | null {
   switch (filter.operator) {
     case "eq":
       return scalarEquality(filter.attribute, filter.value);
@@ -151,6 +152,10 @@ function safePageValue(value: number | undefined): boolean {
   return value === undefined || (Number.isSafeInteger(value) && value >= 0);
 }
 
+function uint64PageParameter(value: number) {
+  return mysqlPromise.param.uint64(value);
+}
+
 export function compileMySqlObjectQueryPlan(
   tableName: string,
   query: ObjectQuery,
@@ -183,10 +188,13 @@ export function compileMySqlObjectQueryPlan(
 
   if (paginationPushed && query.limit !== undefined) {
     sql += "\nLIMIT ? OFFSET ?";
-    parameters.push(query.limit, query.offset ?? 0);
+    parameters.push(
+      uint64PageParameter(query.limit),
+      uint64PageParameter(query.offset ?? 0),
+    );
   } else if (paginationPushed && query.offset !== undefined && query.offset > 0) {
     sql += "\nLIMIT 18446744073709551615 OFFSET ?";
-    parameters.push(query.offset);
+    parameters.push(uint64PageParameter(query.offset));
   }
 
   return {
