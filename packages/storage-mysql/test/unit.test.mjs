@@ -1,25 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_MYSQL_METADATA_TABLE,
   DEFAULT_MYSQL_STORAGE_TABLE,
   DEFAULT_MYSQL_TRANSACTION_RETRIES,
+  MYSQL_METADATA_KEY_MAX_LENGTH,
+  MYSQL_METADATA_SCHEMA_VERSION,
   MYSQL_OBJECT_KEY_MAX_LENGTH,
   MYSQL_SCHEMA_VERSION_MAX,
   MYSQL_STORAGE_SCHEMA_VERSION,
+  MySqlMetadataStore,
   MySqlStorageAdapter,
+  createMetadataTableSql,
   createStorageTableSql,
   quoteSqlIdentifier,
   validateSqlIdentifier,
 } from "../dist/index.js";
 import { decodeRecord, encodeRecord } from "../dist/codec.js";
 
-test("schema constants and DDL are deterministic", () => {
+test("object and metadata schema DDL are deterministic", () => {
   assert.equal(MYSQL_STORAGE_SCHEMA_VERSION, 1);
   assert.equal(DEFAULT_MYSQL_STORAGE_TABLE, "metaobject_objects");
-  const sql = createStorageTableSql();
-  assert.match(sql, /CREATE TABLE IF NOT EXISTS `metaobject_objects`/);
-  assert.match(sql, /PRIMARY KEY \(object_type, object_id\)/);
-  assert.match(sql, /ENGINE=InnoDB/);
+  const objectSql = createStorageTableSql();
+  assert.match(objectSql, /CREATE TABLE IF NOT EXISTS `metaobject_objects`/);
+  assert.match(objectSql, /PRIMARY KEY \(object_type, object_id\)/);
+  assert.match(objectSql, /ENGINE=InnoDB/);
+
+  assert.equal(MYSQL_METADATA_SCHEMA_VERSION, 1);
+  assert.equal(DEFAULT_MYSQL_METADATA_TABLE, "metaobject_metadata");
+  const metadataSql = createMetadataTableSql();
+  assert.match(metadataSql, /CREATE TABLE IF NOT EXISTS `metaobject_metadata`/);
+  assert.match(metadataSql, /PRIMARY KEY \(object_type_id, object_type_version\)/);
+  assert.match(metadataSql, /JSON_VALID\(snapshot_json\)/);
+  assert.match(metadataSql, /ENGINE=InnoDB/);
 });
 
 test("table identifiers are strictly constrained", () => {
@@ -27,6 +40,7 @@ test("table identifiers are strictly constrained", () => {
   assert.equal(quoteSqlIdentifier("metaobject_tenant_01"), "`metaobject_tenant_01`");
   assert.throws(() => validateSqlIdentifier("metaobject;DROP TABLE x"), /Invalid MySQL identifier/);
   assert.throws(() => new MySqlStorageAdapter({}, { tableName: "bad-name" }), /Invalid MySQL identifier/);
+  assert.throws(() => new MySqlMetadataStore({}, { tableName: "bad-name" }), /Invalid MySQL identifier/);
 });
 
 test("codec rejects cycles without invoking accessors", () => {
@@ -83,7 +97,7 @@ test("codec rejects malformed canonical values", () => {
   assert.throws(() => decodeRecord(badBigInt), /Invalid MySQL snapshot encoding/);
 });
 
-test("persistence boundaries fail before reaching MySQL", async () => {
+test("object persistence boundaries fail before reaching MySQL", async () => {
   const pool = {
     query() {
       throw new Error("database should not be reached");
@@ -120,6 +134,65 @@ test("persistence boundaries fail before reaching MySQL", async () => {
   await assert.rejects(
     () => adapter.get({ id: "", type: "example.item" }),
     /must be a non-empty string/,
+  );
+});
+
+test("metadata persistence boundaries fail before reaching MySQL", async () => {
+  const pool = {
+    query() {
+      throw new Error("database should not be reached");
+    },
+    execute() {
+      throw new Error("database should not be reached");
+    },
+    withTransaction() {
+      throw new Error("database should not be reached");
+    },
+  };
+  const store = new MySqlMetadataStore(pool);
+  const record = {
+    objectTypeId: "example.item",
+    objectTypeVersion: 1,
+    status: "draft",
+    revision: 0,
+    snapshot: {
+      objectType: {
+        objectTypeId: "example.item",
+        version: 1,
+        name: "Example",
+        abstract: false,
+        sealed: false,
+        extensible: false,
+      },
+      attributes: [],
+      attributeConstraints: [],
+      relationships: [],
+      indexes: [],
+      indexAttributes: [],
+      rules: [],
+      operations: [],
+      events: [],
+      hooks: [],
+    },
+    createdAt: "2026-09-27T20:00:00.000Z",
+    updatedAt: "2026-09-27T20:00:00.000Z",
+  };
+
+  await assert.rejects(
+    () => store.save({ ...record, objectTypeId: "x".repeat(MYSQL_METADATA_KEY_MAX_LENGTH + 1) }),
+    /exceeds MySQL storage limit/,
+  );
+  await assert.rejects(
+    () => store.save({ ...record, snapshot: { ...record.snapshot, objectType: { ...record.snapshot.objectType, objectTypeId: "wrong" } } }),
+    /does not match record/,
+  );
+  await assert.rejects(
+    () => store.save({ ...record, status: "invalid" }),
+    /Invalid metadata status/,
+  );
+  await assert.rejects(
+    () => store.save(record, Number.MAX_SAFE_INTEGER),
+    /cannot be incremented/,
   );
 });
 
