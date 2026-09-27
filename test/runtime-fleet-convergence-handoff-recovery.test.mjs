@@ -92,7 +92,7 @@ function fixture(records, admissionRecords = []) {
     async history(filter = {}) {
       return [...byReservation.values()]
         .filter((record) => filter.status === undefined || record.status === filter.status)
-        .map(structuredClone);
+        .map((record) => structuredClone(record));
     },
     async resume(id) {
       calls.push(["resume", id]);
