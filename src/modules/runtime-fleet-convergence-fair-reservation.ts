@@ -40,7 +40,6 @@ export interface RuntimeFleetFairReservationRecord {
   readonly work: readonly RuntimeFleetFairReservationWork[];
   readonly acquiredAt: string;
   readonly expiresAt: string;
-  /** Set when the finite lease becomes a non-expiring dispatch handoff lock. */
   readonly handoffAt?: string;
   readonly fairAdmissionStatus?: RuntimeFleetFairDispatchRecord["status"];
   readonly dispatchOutcome?: RuntimeFleetFairDispatchRecord["dispatchOutcome"];
@@ -54,12 +53,6 @@ export interface RuntimeFleetFairReservationFilter {
   readonly fairnessPolicyId?: string;
 }
 
-/**
- * acquire() must atomically reject overlap with every unexpired active lease and
- * every handoff lock. active -> handoff transitions must perform the same overlap
- * check atomically because a legacy/expired lease may have been superseded before
- * recovery begins.
- */
 export interface RuntimeFleetFairReservationStore {
   get(reservationId: string): Promise<RuntimeFleetFairReservationRecord | null>;
   list(filter?: RuntimeFleetFairReservationFilter): Promise<readonly RuntimeFleetFairReservationRecord[]>;
@@ -94,7 +87,6 @@ export class MemoryRuntimeFleetFairReservationStore implements RuntimeFleetFairR
     if (this.#records.has(record.reservationId)) {
       throw new ConcurrencyError(`Runtime fleet fair reservation '${record.reservationId}' already exists.`);
     }
-
     this.assertNoOwnershipOverlap(record, Date.parse(record.acquiredAt));
     const stored = clone({ ...record, revision: 1 });
     this.#records.set(stored.reservationId, stored);
@@ -139,7 +131,6 @@ export class MemoryRuntimeFleetFairReservationStore implements RuntimeFleetFairR
     if (current.status === "active" && record.status === "handoff") {
       this.assertNoOwnershipOverlap(record, Date.parse(record.handoffAt!), current.reservationId);
     }
-
     const stored = clone({ ...record, revision: current.revision + 1 });
     this.#records.set(stored.reservationId, stored);
     return clone(stored);
@@ -183,7 +174,6 @@ export interface RuntimeFleetFairReservationRequest {
   readonly dispatchId: string;
   readonly workerId: string;
   readonly leaseMs: number;
-  /** Maximum ranked items protected by this lease. Defaults to 100. */
   readonly maxItems?: number;
 }
 
@@ -194,11 +184,6 @@ export interface RuntimeFleetFairReservationDispatchResult {
 
 export type RuntimeFleetFairReservationClock = () => Date;
 
-/**
- * Atomically reserve the exact M39-ranked work set before M40 admission. Before
- * invoking M40 the finite lease is promoted to a non-expiring handoff lock, so
- * long-running M40/M36 work cannot lose ownership merely because expiresAt passes.
- */
 export class RuntimeFleetFairReservationCatalog {
   constructor(
     private readonly fairness: RuntimeFleetFairReservationFairnessSource,
@@ -222,7 +207,6 @@ export class RuntimeFleetFairReservationCatalog {
     if (await this.reservations.get(request.reservationId)) {
       throw new ConcurrencyError(`Runtime fleet fair reservation '${request.reservationId}' already exists.`);
     }
-
     const evaluation = await this.requireFairness(request.fairnessId);
     const selectedIds = evaluation.orderedWorkIds.slice(0, maxItems);
     if (selectedIds.length === 0) {
@@ -230,9 +214,6 @@ export class RuntimeFleetFairReservationCatalog {
     }
     const work = await this.revalidateSelection(evaluation, selectedIds);
     const acquired = this.clock();
-    const acquiredAt = acquired.toISOString();
-    const expiresAt = new Date(acquired.getTime() + request.leaseMs).toISOString();
-
     return this.reservations.acquire({
       format: "nublox-metaobject-runtime-fleet-fair-reservation",
       formatVersion: 1,
@@ -247,8 +228,8 @@ export class RuntimeFleetFairReservationCatalog {
       dispatchId: request.dispatchId,
       workerId: request.workerId,
       work,
-      acquiredAt,
-      expiresAt,
+      acquiredAt: acquired.toISOString(),
+      expiresAt: new Date(acquired.getTime() + request.leaseMs).toISOString(),
     });
   }
 
@@ -256,13 +237,11 @@ export class RuntimeFleetFairReservationCatalog {
     const reservation = await this.requireReservation(reservationId);
     if (reservation.status === "consumed" || reservation.status === "released") return { reservation };
     if (reservation.status === "handoff") return this.executeHandoff(reservation);
-
     const existingAdmission = await this.fairDispatcher.get(reservation.admissionId);
     if (existingAdmission) {
       const handoff = await this.beginHandoff(reservation);
       return this.finishExistingAdmission(handoff, existingAdmission);
     }
-
     this.assertUnexpired(reservation);
     await this.revalidateReservedWork(reservation);
     const handoff = await this.beginHandoff(reservation);
@@ -273,7 +252,6 @@ export class RuntimeFleetFairReservationCatalog {
     const reservation = await this.requireReservation(reservationId);
     if (reservation.status === "consumed" || reservation.status === "released") return { reservation };
     if (reservation.status === "handoff") return this.executeHandoff(reservation);
-
     const existingAdmission = await this.fairDispatcher.get(reservation.admissionId);
     if (existingAdmission) {
       const handoff = await this.beginHandoff(reservation);
@@ -288,17 +266,35 @@ export class RuntimeFleetFairReservationCatalog {
     if (reservation.status !== "active" && reservation.status !== "handoff") {
       throw new MetadataError(`Runtime fleet fair reservation '${reservationId}' is '${reservation.status}' and cannot be released.`);
     }
-    if (await this.fairDispatcher.get(reservation.admissionId)) {
+
+    const existingAdmission = await this.fairDispatcher.get(reservation.admissionId);
+    if (reservation.status === "active") {
+      if (existingAdmission) {
+        throw new MetadataError(
+          `Runtime fleet fair reservation '${reservationId}' already has M40 admission '${reservation.admissionId}' and must be resumed instead of released.`,
+        );
+      }
+      return this.saveReleased(reservation, reason, expectedRevision);
+    }
+
+    if (existingAdmission && existingAdmission.status !== "cancelled") {
       throw new MetadataError(
         `Runtime fleet fair reservation '${reservationId}' already has M40 admission '${reservation.admissionId}' and must be resumed instead of released.`,
       );
     }
-    return this.reservations.save({
-      ...reservation,
-      status: "released",
+    const cancellation = existingAdmission ?? await this.fairDispatcher.cancel({
+      admissionId: reservation.admissionId,
+      fairnessId: reservation.fairnessId,
+      dispatchId: reservation.dispatchId,
+      workerId: reservation.workerId,
+      maxItems: reservation.work.length,
       reason,
-      finishedAt: this.clock().toISOString(),
-    }, expectedRevision);
+    });
+    this.assertMatchingAdmission(reservation, cancellation);
+    if (cancellation.status !== "cancelled") {
+      throw new MetadataError(`Runtime fleet fair reservation '${reservationId}' expected a cancelled M40 fence.`);
+    }
+    return this.saveReleased(reservation, cancellation.reason ?? reason, expectedRevision);
   }
 
   async get(reservationId: string): Promise<RuntimeFleetFairReservationRecord | null> {
@@ -325,7 +321,6 @@ export class RuntimeFleetFairReservationCatalog {
   private async executeHandoff(reservation: RuntimeFleetFairReservationRecord): Promise<RuntimeFleetFairReservationDispatchResult> {
     const existingAdmission = await this.fairDispatcher.get(reservation.admissionId);
     if (existingAdmission) return this.finishExistingAdmission(reservation, existingAdmission);
-
     await this.revalidateReservedWork(reservation);
     try {
       const fairDispatch = await this.fairDispatcher.dispatch({
@@ -349,9 +344,38 @@ export class RuntimeFleetFairReservationCatalog {
     admission: RuntimeFleetFairDispatchRecord,
   ): Promise<RuntimeFleetFairReservationDispatchResult> {
     this.assertMatchingAdmission(reservation, admission);
+    if (admission.status === "cancelled") {
+      const released = await this.saveReleased(
+        reservation,
+        admission.reason ?? "M40 admission cancelled",
+        reservation.revision,
+      );
+      return { reservation: released, fairDispatch: { admission } };
+    }
     const fairDispatch = await this.fairDispatcher.resume(reservation.admissionId);
+    if (fairDispatch.admission.status === "cancelled") {
+      const released = await this.saveReleased(
+        reservation,
+        fairDispatch.admission.reason ?? "M40 admission cancelled",
+        reservation.revision,
+      );
+      return { reservation: released, fairDispatch };
+    }
     const consumed = await this.consume(reservation, fairDispatch.admission);
     return { reservation: consumed, fairDispatch };
+  }
+
+  private async saveReleased(
+    reservation: RuntimeFleetFairReservationRecord,
+    reason: string,
+    expectedRevision: number,
+  ): Promise<RuntimeFleetFairReservationRecord> {
+    return this.reservations.save({
+      ...reservation,
+      status: "released",
+      reason,
+      finishedAt: this.clock().toISOString(),
+    }, expectedRevision);
   }
 
   private async consume(
@@ -377,10 +401,7 @@ export class RuntimeFleetFairReservationCatalog {
     }
   }
 
-  private assertMatchingAdmission(
-    reservation: RuntimeFleetFairReservationRecord,
-    admission: RuntimeFleetFairDispatchRecord,
-  ): void {
+  private assertMatchingAdmission(reservation: RuntimeFleetFairReservationRecord, admission: RuntimeFleetFairDispatchRecord): void {
     if (
       admission.admissionId !== reservation.admissionId
       || admission.fairnessId !== reservation.fairnessId
@@ -471,13 +492,9 @@ function assertReservationTransition(
 }
 
 function assertExactWork(work: RuntimeFleetConvergenceWorkItem, decision: RuntimeFleetConvergenceFairnessDecision): void {
-  if (work.status !== "pending") {
-    throw new ConcurrencyError(`Runtime fleet convergence work '${work.workId}' is '${work.status}' and cannot be reserved.`);
-  }
+  if (work.status !== "pending") throw new ConcurrencyError(`Runtime fleet convergence work '${work.workId}' is '${work.status}' and cannot be reserved.`);
   if (work.revision !== decision.workRevision) {
-    throw new ConcurrencyError(
-      `Runtime fleet convergence work '${work.workId}' changed from fairness revision ${decision.workRevision} to ${work.revision}.`,
-    );
+    throw new ConcurrencyError(`Runtime fleet convergence work '${work.workId}' changed from fairness revision ${decision.workRevision} to ${work.revision}.`);
   }
   if (work.runtimeId !== decision.runtimeId || work.action !== decision.action) {
     throw new ConcurrencyError(`Runtime fleet convergence work '${work.workId}' identity changed after M39 fairness evaluation.`);
@@ -489,9 +506,7 @@ function assertText(value: string, label: string): void {
 }
 
 function assertPositiveInteger(value: number, label: string): void {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new MetadataError(`Runtime fleet fair reservation ${label} must be a positive integer.`);
-  }
+  if (!Number.isSafeInteger(value) || value < 1) throw new MetadataError(`Runtime fleet fair reservation ${label} must be a positive integer.`);
 }
 
 const validStatuses = new Set<RuntimeFleetFairReservationStatus>(["active", "handoff", "consumed", "released"]);
@@ -511,9 +526,7 @@ export function validateRuntimeFleetFairReservationRecord(record: RuntimeFleetFa
     acquiredAt: record.acquiredAt,
     expiresAt: record.expiresAt,
   })) assertText(value, label);
-  if (!Number.isSafeInteger(record.revision) || record.revision < 0) {
-    throw new MetadataError("Runtime fleet fair reservation revision must be a non-negative integer.");
-  }
+  if (!Number.isSafeInteger(record.revision) || record.revision < 0) throw new MetadataError("Runtime fleet fair reservation revision must be a non-negative integer.");
   assertPositiveInteger(record.fairnessPolicyVersion, "fairnessPolicyVersion");
   if (!validStatuses.has(record.status)) throw new MetadataError(`Invalid runtime fleet fair reservation status '${String(record.status)}'.`);
   const acquired = Date.parse(record.acquiredAt);
@@ -523,9 +536,7 @@ export function validateRuntimeFleetFairReservationRecord(record: RuntimeFleetFa
   }
   if (record.handoffAt !== undefined) {
     const handoff = Date.parse(record.handoffAt);
-    if (!Number.isFinite(handoff) || handoff < acquired) {
-      throw new MetadataError("Runtime fleet fair reservation handoffAt must be a valid timestamp at or after acquiredAt.");
-    }
+    if (!Number.isFinite(handoff) || handoff < acquired) throw new MetadataError("Runtime fleet fair reservation handoffAt must be a valid timestamp at or after acquiredAt.");
   }
   if (record.work.length === 0) throw new MetadataError("Runtime fleet fair reservation requires at least one work item.");
   const workIds = new Set<string>();
@@ -535,34 +546,19 @@ export function validateRuntimeFleetFairReservationRecord(record: RuntimeFleetFa
     assertText(item.runtimeId, "runtimeId");
     assertPositiveInteger(item.workRevision, "workRevision");
     assertPositiveInteger(item.fairnessRank, "fairnessRank");
-    if (item.fairnessRank <= previousRank) {
-      throw new MetadataError("Runtime fleet fair reservation work must preserve ascending fairness rank.");
-    }
+    if (item.fairnessRank <= previousRank) throw new MetadataError("Runtime fleet fair reservation work must preserve ascending fairness rank.");
     previousRank = item.fairnessRank;
     if (workIds.has(item.workId)) throw new MetadataError(`Runtime fleet fair reservation contains duplicate work '${item.workId}'.`);
     workIds.add(item.workId);
   }
 
   if (record.status === "active") {
-    if (
-      record.handoffAt !== undefined
-      || record.fairAdmissionStatus !== undefined
-      || record.dispatchOutcome !== undefined
-      || record.finishedAt !== undefined
-      || record.reason !== undefined
-    ) {
+    if (record.handoffAt !== undefined || record.fairAdmissionStatus !== undefined || record.dispatchOutcome !== undefined || record.finishedAt !== undefined || record.reason !== undefined) {
       throw new MetadataError("Active runtime fleet fair reservation cannot contain handoff or terminal state.");
     }
   } else if (record.status === "handoff") {
-    if (!record.handoffAt?.trim()) {
-      throw new MetadataError("Handoff runtime fleet fair reservation requires handoffAt.");
-    }
-    if (
-      record.fairAdmissionStatus !== undefined
-      || record.dispatchOutcome !== undefined
-      || record.finishedAt !== undefined
-      || record.reason !== undefined
-    ) {
+    if (!record.handoffAt?.trim()) throw new MetadataError("Handoff runtime fleet fair reservation requires handoffAt.");
+    if (record.fairAdmissionStatus !== undefined || record.dispatchOutcome !== undefined || record.finishedAt !== undefined || record.reason !== undefined) {
       throw new MetadataError("Handoff runtime fleet fair reservation cannot contain terminal state.");
     }
   } else if (record.status === "consumed") {
@@ -573,9 +569,7 @@ export function validateRuntimeFleetFairReservationRecord(record: RuntimeFleetFa
       throw new MetadataError("Consumed reservation for completed M40 admission requires dispatchOutcome.");
     }
   } else {
-    if (!record.finishedAt?.trim() || !record.reason?.trim()) {
-      throw new MetadataError("Released runtime fleet fair reservation requires finishedAt and reason.");
-    }
+    if (!record.finishedAt?.trim() || !record.reason?.trim()) throw new MetadataError("Released runtime fleet fair reservation requires finishedAt and reason.");
     if (record.fairAdmissionStatus !== undefined || record.dispatchOutcome !== undefined) {
       throw new MetadataError("Released runtime fleet fair reservation cannot contain M40 terminal evidence.");
     }
