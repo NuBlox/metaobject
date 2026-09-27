@@ -12,6 +12,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `mysql-storage-m70-hardening.md` — MySQL persistence-boundary, codec and optimistic-concurrency hardening.
 - `mysql-metadata-store.md` — M71 MySQL `MetadataStore`, transactional revisions and race/tamper handling.
 - `mysql-query-m72-pushdown.md` — M72 prepared SQL translation, safe predicate pushdown and fallback boundaries.
+- `mysql-schema-migrations.md` — M73 versioned physical-schema migrations, ledger integrity, locking and drift detection.
 - `releasing.md` — supported Node versions, package verification and release procedure.
 - `release-candidate-readiness.md` — finite RC gate and remaining work.
 
@@ -24,6 +25,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `metadata-persistence.md`
 - `mysql-metadata-store.md`
 - `mysql-query-m72-pushdown.md`
+- `mysql-schema-migrations.md`
 - `code-generation.md`
 - `schema-evolution.md`
 - `metadata-release-pipeline.md`
@@ -66,6 +68,7 @@ The individual `runtime-fleet-convergence-handoff-recovery-trust-*` documents ar
 - `mysql-storage-m70-hardening.md` — production MySQL object-storage hardening evidence.
 - `mysql-metadata-store.md` — production MySQL metadata persistence evidence.
 - `mysql-query-m72-pushdown.md` — contract-preserving MySQL query translation evidence.
+- `mysql-schema-migrations.md` — physical-schema migration/recovery/drift evidence.
 - `releasing.md` — package verification and clean-consumer checks.
 - `../CHANGELOG.md` — release history and release-note convention.
 
