@@ -53,9 +53,12 @@ M69 uses one InnoDB table keyed by `(object_type, object_id)`:
 
 - `schema_version` preserves the MetaObject schema revision bound to the snapshot;
 - `version` implements optimistic object concurrency;
-- `values_json` stores a versioned NuBlox value envelope;
-- `relationships_json` stores the relationship snapshot using the same lossless envelope;
+- `values_json` stores a versioned NuBlox value envelope as `LONGTEXT`;
+- `relationships_json` stores the relationship snapshot using the same lossless `LONGTEXT` envelope;
+- `JSON_VALID(...)` checks ensure both envelopes remain valid JSON;
 - MySQL timestamps record row creation/update time without becoming part of the MetaObject snapshot contract.
+
+The envelopes are deliberately stored as text rather than MySQL's native `JSON` type. MySQL normalizes JSON object member ordering, whereas the MetaObject RC conformance boundary requires an exact snapshot round trip including record member order. Validated text preserves the encoded order without weakening JSON validity.
 
 The value codec preserves values that ordinary JSON would silently lose or coerce, including `Date`, `BigInt`, `undefined`, `NaN`, positive/negative infinity and negative zero.
 
