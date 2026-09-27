@@ -9,6 +9,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `end-to-end-examples.md` — representative workflows from metadata definition through trust verification.
 - `public-api.md` — v1 public API compatibility boundary and stability rules.
 - `storage-adapter-conformance.md` — executable persistence compatibility contract.
+- `mysql-storage-m70-hardening.md` — MySQL persistence-boundary, codec and optimistic-concurrency hardening.
 - `releasing.md` — supported Node versions, package verification and release procedure.
 - `release-candidate-readiness.md` — finite RC gate and remaining work.
 
@@ -58,9 +59,10 @@ The individual `runtime-fleet-convergence-handoff-recovery-trust-*` documents ar
 
 - `public-api.md` — compatibility generation and root-export policy.
 - `storage-adapter-conformance.md` — adapter compatibility suite.
+- `mysql-storage-m70-hardening.md` — production MySQL adapter hardening evidence.
 - `releasing.md` — package verification and clean-consumer checks.
 - `../CHANGELOG.md` — release history and release-note convention.
 
 ## Scope boundary
 
-Database-specific drivers/adapters, application-framework integration, NuBlox product UI and application-specific domain metadata are intentionally outside this package. They consume the public contracts defined here.
+Database-specific drivers/adapters, application-framework integration, NuBlox product UI and application-specific domain metadata remain outside the core `@nublox/metaobject` package. Database adapters may live as sibling npm packages in this repository while consuming only the core public contracts.
