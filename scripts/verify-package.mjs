@@ -1,4 +1,18 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+
+const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+const expectedRepository = "git+https://github.com/NuBlox/metaobject.git";
+
+if (packageJson.name !== "@nublox/metaobject") throw new Error("Unexpected package name.");
+if (packageJson.license !== "Apache-2.0") throw new Error("Package licence must remain Apache-2.0.");
+if (packageJson.author !== "Stephen J T Spittal") throw new Error("Unexpected package author metadata.");
+if (packageJson.repository?.url !== expectedRepository) {
+  throw new Error(`Package repository.url must be '${expectedRepository}'.`);
+}
+if (packageJson.scripts?.prepublishOnly !== "npm run release:check") {
+  throw new Error("prepublishOnly must enforce the complete release gate.");
+}
 
 const output = execFileSync("npm", ["pack", "--dry-run", "--json"], {
   encoding: "utf8",
@@ -25,4 +39,4 @@ if (unexpectedTopLevel.length > 0) {
   throw new Error(`Package contains unexpected top-level files: ${unexpectedTopLevel.join(", ")}`);
 }
 
-console.log(`Verified npm package manifest: ${files.length} files, ${result.size} bytes.`);
+console.log(`Verified npm package metadata and manifest: ${files.length} files, ${result.size} bytes.`);
