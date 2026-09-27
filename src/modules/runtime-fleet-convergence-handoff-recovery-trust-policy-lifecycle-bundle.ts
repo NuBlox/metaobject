@@ -1,9 +1,9 @@
 import { ConcurrencyError, MetadataError } from "../errors/errors.js";
 import { canonicalizeJson, sha256Hex } from "./runtime-fleet-convergence-handoff-recovery-integrity.js";
+import { RuntimeFleetHandoffRecoveryEvidenceSignatureProviderRegistry } from "./runtime-fleet-convergence-handoff-recovery-signature.js";
 import {
   MemoryRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatureStore,
   RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatureCatalog,
-  RuntimeFleetHandoffRecoveryEvidenceSignatureProviderRegistry,
   validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatureRecord,
 } from "./runtime-fleet-convergence-handoff-recovery-trust-policy-lifecycle-signature.js";
 import type {
@@ -224,14 +224,14 @@ export class RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleBundleCatalo
       throw new MetadataError("Lifecycle trust evaluation does not match the supplied trust policy identity/quorum.");
     }
 
-    const allEvents = [...await this.lifecycle.history({ policyId: lifecycleIntegrity.policyId })]
+    const lifecycleEvents = [...await this.lifecycle.history({ policyId: lifecycleIntegrity.policyId })]
       .filter((event) => event.revision <= lifecycleIntegrity.lifecycleRevision)
       .sort((left, right) => left.revision - right.revision || left.eventId.localeCompare(right.eventId));
-    for (const event of allEvents) validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleEventRecord(event);
-    const lifecycleState = reconstructLifecycleState(lifecycleIntegrity, allEvents);
+    for (const event of lifecycleEvents) validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleEventRecord(event);
+    const lifecycleState = reconstructLifecycleState(lifecycleIntegrity, lifecycleEvents);
 
     const policySnapshots: RuntimeFleetHandoffRecoveryEvidenceTrustPolicySnapshotRecord[] = [];
-    const snapshotIds = [...new Set(allEvents.map((event) => event.snapshotId))];
+    const snapshotIds = [...new Set(lifecycleEvents.map((event) => event.snapshotId))];
     for (const snapshotId of snapshotIds) {
       const snapshot = await this.snapshots.get(snapshotId);
       if (!snapshot) throw new MetadataError(`Unknown lifecycle policy snapshot '${snapshotId}'.`);
@@ -253,7 +253,7 @@ export class RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleBundleCatalo
 
     const componentDigests = await digestBundleComponents({
       lifecycleState,
-      lifecycleEvents: allEvents,
+      lifecycleEvents,
       policySnapshots,
       lifecycleIntegrity,
       lifecycleSignatures,
@@ -278,7 +278,7 @@ export class RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleBundleCatalo
       policyId: lifecycleIntegrity.policyId,
       lifecycleRevision: lifecycleIntegrity.lifecycleRevision,
       lifecycleState: clone(lifecycleState),
-      lifecycleEvents: clone(allEvents),
+      lifecycleEvents: clone(lifecycleEvents),
       policySnapshots: clone(policySnapshots),
       lifecycleIntegrity: clone(lifecycleIntegrity),
       lifecycleSignatures: clone(lifecycleSignatures),
@@ -350,7 +350,7 @@ export async function verifyRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecy
       async history(filter: { readonly policyId?: string } = {}): Promise<readonly RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleEventRecord[]> {
         return record.lifecycleEvents
           .filter((event) => filter.policyId === undefined || event.policyId === filter.policyId)
-          .map(clone);
+          .map((event) => clone(event));
       },
     };
     const snapshotSource = {
