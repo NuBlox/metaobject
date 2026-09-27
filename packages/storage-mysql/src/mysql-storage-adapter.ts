@@ -11,6 +11,7 @@ import {
   type StorageBatchWrite,
 } from "@nublox/metaobject";
 import { decodeRecord, encodeRecord } from "./codec.js";
+import { compileMySqlObjectQueryPlan } from "./query-compiler.js";
 import {
   DEFAULT_MYSQL_STORAGE_TABLE,
   createStorageTableSql,
@@ -267,15 +268,13 @@ export class MySqlStorageAdapter implements StorageAdapter {
 
   async query(query: ObjectQuery): Promise<readonly ObjectSnapshot[]> {
     validateObjectKeyPart(query.objectType, "type");
-    const [rows] = await this.#pool.query<SnapshotRow[]>(
-      `SELECT object_type, object_id, schema_version, version, values_json, relationships_json
-       FROM ${this.#table}
-       WHERE object_type = ?
-       ORDER BY object_id ASC`,
-      [query.objectType],
-    );
+    const plan = compileMySqlObjectQueryPlan(this.#tableName, query);
+    const [rows] = await this.#pool.execute<SnapshotRow[]>(plan.sql, [...plan.parameters]);
 
     let results = rows.map(rowToSnapshot);
+    // Reapply every predicate after decoding as a semantic defence-in-depth
+    // check. SQL push-down is candidate reduction, never a change to the
+    // StorageAdapter contract.
     for (const filter of query.where ?? []) {
       results = results.filter((item) => matches(item.values[filter.attribute], filter));
     }
@@ -285,6 +284,8 @@ export class MySqlStorageAdapter implements StorageAdapter {
         return sort.direction === "desc" ? -result : result;
       });
     }
+
+    if (plan.paginationPushed) return results;
     const offset = query.offset ?? 0;
     const end = query.limit === undefined ? undefined : offset + query.limit;
     return results.slice(offset, end);
