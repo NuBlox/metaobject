@@ -226,7 +226,7 @@ CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The
 - **M68 — `v1.0.0-rc.1`** ✅ published
 - **M69 — MySQL storage-adapter foundation** ✅
 - **M70 — Production persistence/concurrency hardening** ✅
-- **M71 — MySQL MetadataStore persistence and transactional metadata revisions** 🚧
+- **M71 — MySQL MetadataStore persistence and transactional metadata revisions** ✅
 
 The finite RC gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 
