@@ -8,7 +8,7 @@ It deliberately contains no NuBlox product UI, tenant/business-domain model or d
 
 ## Current status
 
-The package is in release-candidate hardening. Implemented work now covers M0–M65; M66 documentation convergence, M67 adversarial hardening and M68 `v1.0.0-rc.1` remain in the finite RC plan.
+**`v1.0.0-rc.1` is the first v1 release candidate.** The finite M62–M67 hardening plan is complete; M68 freezes that verified scope into the prerelease.
 
 Public API generation: `METAOBJECT_PUBLIC_API_VERSION === "1"`.
 
@@ -105,7 +105,7 @@ See [`docs/architecture.md`](docs/architecture.md) and [`docs/index.md`](docs/in
 - `StorageAdapter` and `MetadataStore` abstractions;
 - normalized metadata persistence;
 - atomic batch writes and optimistic revisions;
-- reusable M64 adapter-conformance suites.
+- reusable adapter-conformance suites.
 
 ### Code generation, evolution and release
 
@@ -153,7 +153,8 @@ See [`docs/architecture.md`](docs/architecture.md) and [`docs/index.md`](docs/in
 - portable historical lifecycle trust bundles;
 - external bundle anchors;
 - immutable external trust-root snapshots;
-- root governance, recoverable rotation/supersession and authoritative chain resolution.
+- root governance, recoverable rotation/supersession and authoritative chain resolution;
+- adversarial replay/tamper coverage for the RC trust boundary.
 
 ## Storage adapters
 
@@ -211,9 +212,9 @@ CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24.
 - **M63 — Public API stabilization** ✅
 - **M64 — Storage/adapter conformance** ✅
 - **M65 — Release engineering** ✅
-- **M66 — Documentation convergence** in progress
-- **M67 — Adversarial hardening** next
-- **M68 — `v1.0.0-rc.1`** final RC cut
+- **M66 — Documentation convergence** ✅
+- **M67 — Adversarial hardening** ✅
+- **M68 — `v1.0.0-rc.1`** release-candidate cut
 
 The finite gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 
@@ -223,4 +224,4 @@ Use [`docs/index.md`](docs/index.md) as the documentation map.
 
 ## Licensing
 
-`package.json` is intentionally marked `UNLICENSED` for RC preparation. Repository access does not grant redistribution or reuse rights. Public package publication must not occur until NuBlox explicitly changes the publication/licence decision.
+`package.json` is intentionally marked `UNLICENSED` for the RC. Repository access does not grant redistribution or reuse rights. Public package publication must not occur until NuBlox explicitly changes the publication/licence decision.
