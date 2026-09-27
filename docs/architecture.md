@@ -123,7 +123,7 @@ M63 defines the package root export (`@nublox/metaobject`) as the supported v1 c
 
 M65 validates the installable package itself, not only the repository build. CI covers Node.js 20, 22 and 24, verifies npm package contents and installs the generated tarball into a clean runtime/TypeScript consumer.
 
-The package remains `UNLICENSED`; public npm publication is intentionally blocked until NuBlox explicitly chooses a distribution licence/posture.
+The package is licensed under Apache-2.0. Every distributable tarball must contain `LICENSE` and `NOTICE`, with copyright attribution to Stephen J T Spittal. Licensing permits redistribution subject to the Apache-2.0 terms; publication remains a separate deliberate release operation.
 
 ## Package boundaries
 
