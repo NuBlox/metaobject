@@ -4,7 +4,7 @@ This document defines the finite gate for the first `@nublox/metaobject` v1.0 re
 
 ## Current position
 
-The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, the M49–M62 integrity/trust chain, a stabilized M63 public API, and reusable M64 adapter-conformance verification.
+The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, the M49–M62 integrity/trust chain, a stabilized M63 public API, reusable M64 adapter conformance, and M65 release-engineering verification.
 
 The first RC should be cut when the existing scope is hardened and documented. New product features are not RC blockers unless they close one of the gates below.
 
@@ -40,18 +40,21 @@ Implemented:
 - documents the compatibility boundary for MySQL/PostgreSQL/SQLite and other external adapter packages;
 - keeps database drivers and dialect-specific dependencies outside core.
 
-### M65 — Release engineering
+### M65 — Release engineering ✅
 
-- add deterministic package-content verification (`npm pack --dry-run` or equivalent CI gate);
-- validate ESM/type declarations from a clean consumer fixture;
-- establish supported Node versions in CI;
-- add changelog/release notes conventions;
-- decide package licence before any public publication.
+Implemented:
+
+- deterministic npm package-manifest verification rejects source/test/internal files and requires root runtime/type declarations;
+- clean-consumer verification installs the generated tarball and validates both ESM runtime imports and TypeScript declarations;
+- CI explicitly tests Node.js 20, 22 and 24;
+- GitHub Actions use Node-24-compatible checkout/setup-node majors;
+- `CHANGELOG.md` and release-note conventions are established;
+- publication/licence status is intentionally `UNLICENSED`: no public npm publication until NuBlox explicitly changes that decision.
 
 ### M66 — Documentation convergence
 
 - bring the README implemented-scope and roadmap sections up to the current milestone;
-- add architecture/index documentation for M14–M64;
+- add architecture/index documentation for M14–M65;
 - provide minimal end-to-end examples for metadata definition, persistence, modules, runtime control, and trust verification;
 - document stability/compatibility guarantees and extension points.
 
@@ -77,12 +80,12 @@ Implemented:
 - [x] trust-root supersession resolves to one unambiguous current authority;
 - [x] public API surface is reviewed and intentionally exported;
 - [x] storage/persistence adapter contracts have a reusable conformance suite;
-- [ ] package contents and clean-consumer imports are CI-verified;
-- [ ] supported Node versions are tested explicitly;
+- [x] package contents and clean-consumer imports are CI-verified;
+- [x] supported Node versions are tested explicitly;
 - [ ] README and architecture documentation match implemented scope;
 - [ ] portable evidence formats have adversarial/tamper coverage;
 - [ ] no known fail-open trust, lifecycle, concurrency, or persistence defect remains;
-- [ ] licence/publication status is intentionally decided;
+- [x] licence/publication status is intentionally decided;
 - [ ] `main` is green and the RC commit is reproducible.
 
 ## Non-blocking post-RC work

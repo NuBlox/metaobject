@@ -1,6 +1,6 @@
 {
   "name": "@nublox/metaobject",
-  "version": "0.64.0",
+  "version": "0.65.0",
   "description": "Standalone metadata-driven object model and runtime for TypeScript.",
   "type": "module",
   "sideEffects": false,
@@ -23,7 +23,10 @@
     "prepare": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.type-tests.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "verify:package": "npm run build && node scripts/verify-package.mjs",
+    "verify:consumer": "npm run build && node scripts/verify-consumer.mjs",
+    "release:check": "npm run check && npm run verify:package && npm run verify:consumer"
   },
   "devDependencies": {
     "typescript": "^5.8.3"
