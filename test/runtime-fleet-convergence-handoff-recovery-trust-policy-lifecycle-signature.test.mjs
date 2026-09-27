@@ -42,11 +42,12 @@ function integrityRecord() {
   };
 }
 
-function fixture({ integrityValid = true, providerThrows = false } = {}) {
+function fixture({ integrityValid = true, integrityVerifyThrows = false, providerThrows = false } = {}) {
   const current = integrityRecord();
   const source = {
     async get(id) { return id === current.attestationId ? structuredClone(current) : null; },
     async verify(id) {
+      if (integrityVerifyThrows) throw new Error("integrity verifier unavailable");
       return {
         attestationId: id,
         valid: integrityValid,
@@ -96,6 +97,9 @@ test("signs and verifies the exact canonical M54 lifecycle integrity payload", a
   assert.equal(record.policyId, "dual-control");
   assert.equal(record.lifecycleRevision, 1);
   assert.equal(record.rootDigest, current.rootDigest);
+  assert.equal(record.currentStateDigest, current.currentStateDigest);
+  assert.equal(record.digestAlgorithm, "SHA-256");
+  assert.equal(record.canonicalization, "nublox-json-canonical-v1");
   assert.equal(record.signerId, "kms-policy-governance");
   assert.equal(record.algorithm, "TEST-SIGN-v1");
   assert.equal(record.keyId, "policy-key-2026-09");
@@ -160,6 +164,24 @@ test("provider verification errors fail closed", async () => {
   assert.equal(verified.lifecycleIntegrityValid, true);
   assert.equal(verified.payloadMatches, true);
   assert.equal(verified.signatureValid, false);
+});
+
+test("M54 verifier errors fail closed without hiding cryptographic validity", async () => {
+  const { catalog } = fixture();
+  await catalog.sign({
+    signatureId: "lifecycle-signature-1",
+    attestationId: "lifecycle-integrity-1",
+    signerId: "kms-policy-governance",
+  });
+  const failing = fixture({ integrityVerifyThrows: true });
+  const signed = await catalog.get("lifecycle-signature-1");
+  await failing.store.create(signed);
+
+  const verified = await failing.catalog.verify("lifecycle-signature-1");
+  assert.equal(verified.valid, false);
+  assert.equal(verified.lifecycleIntegrityValid, false);
+  assert.equal(verified.payloadMatches, true);
+  assert.equal(verified.signatureValid, true);
 });
 
 test("lifecycle signature history is create-only, detached and filterable", async () => {
