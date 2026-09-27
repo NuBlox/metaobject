@@ -6,6 +6,13 @@ The project follows Semantic Versioning once the v1 public API is released. Pre-
 
 ## Unreleased
 
+### Changed
+
+- Added canonical GitHub repository/homepage/issue metadata to the publishable core package.
+- Added a `prepublishOnly` release gate so `npm publish` cannot bypass package, test and clean-consumer qualification.
+- Added OIDC-ready GitHub Actions publication workflow scaffolding for trusted npm publishing and stable-v1 promotion.
+- No core runtime source, public declaration or v1 compatibility-contract change is introduced by M76.
+
 ## 1.0.0-rc.1
 
 First v1 release candidate for the standalone `@nublox/metaobject` runtime.
