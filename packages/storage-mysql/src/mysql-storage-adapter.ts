@@ -44,7 +44,16 @@ interface VersionRow extends Record<string, unknown> {
 
 export interface MySqlStorageAdapterOptions {
   readonly tableName?: string;
+  /**
+   * Options forwarded to @nublox/mysql for atomic batch transactions.
+   * Transient deadlock/lock-timeout retries default to 2 unless overridden.
+   */
+  readonly transaction?: mysql.TransactionOptions;
 }
+
+export const MYSQL_OBJECT_KEY_MAX_LENGTH = 255;
+export const MYSQL_SCHEMA_VERSION_MAX = 0xffff_ffff;
+export const DEFAULT_MYSQL_TRANSACTION_RETRIES = 2;
 
 const objectKey = (identity: ObjectIdentity): string => `${identity.type}:${identity.id}`;
 
@@ -52,6 +61,61 @@ function mysqlErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" ? code : undefined;
+}
+
+function codePointLength(value: string): number {
+  return Array.from(value).length;
+}
+
+function validateObjectKeyPart(value: unknown, field: "type" | "id"): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new MetadataError(`Object ${field} must be a non-empty string.`);
+  }
+  if (codePointLength(value) > MYSQL_OBJECT_KEY_MAX_LENGTH) {
+    throw new MetadataError(
+      `Object ${field} exceeds MySQL storage limit ${MYSQL_OBJECT_KEY_MAX_LENGTH} characters.`,
+    );
+  }
+  return value;
+}
+
+function validateIdentity(identity: ObjectIdentity): void {
+  validateObjectKeyPart(identity.type, "type");
+  validateObjectKeyPart(identity.id, "id");
+}
+
+function validateSchemaVersion(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > MYSQL_SCHEMA_VERSION_MAX) {
+    throw new MetadataError(
+      `Object schemaVersion must be an integer between 0 and ${MYSQL_SCHEMA_VERSION_MAX}.`,
+    );
+  }
+  return value as number;
+}
+
+function validateExpectedVersion(value: unknown, incrementing: boolean): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new MetadataError("Expected object version must be a non-negative safe integer.");
+  }
+  if (incrementing && (value as number) >= Number.MAX_SAFE_INTEGER) {
+    throw new MetadataError("Expected object version cannot be incremented without exceeding JavaScript safe-integer range.");
+  }
+  return value as number;
+}
+
+function validateSnapshot(snapshot: ObjectSnapshot): void {
+  validateIdentity(snapshot);
+  validateSchemaVersion(snapshot.schemaVersion);
+  if (typeof snapshot.values !== "object" || snapshot.values === null || Array.isArray(snapshot.values)) {
+    throw new MetadataError("Object snapshot values must be an object record.");
+  }
+  if (
+    typeof snapshot.relationships !== "object"
+    || snapshot.relationships === null
+    || Array.isArray(snapshot.relationships)
+  ) {
+    throw new MetadataError("Object snapshot relationships must be an object record.");
+  }
 }
 
 function toSafeInteger(value: number | string, field: string): number {
@@ -117,11 +181,17 @@ export class MySqlStorageAdapter implements StorageAdapter {
   readonly #pool: mysql.PromisePool;
   readonly #tableName: string;
   readonly #table: string;
+  readonly #transactionOptions: mysql.TransactionOptions;
 
   constructor(pool: mysql.PromisePool, options: MySqlStorageAdapterOptions = {}) {
     this.#pool = pool;
     this.#tableName = validateSqlIdentifier(options.tableName ?? DEFAULT_MYSQL_STORAGE_TABLE);
     this.#table = quoteSqlIdentifier(this.#tableName);
+    const transaction = options.transaction ?? {};
+    this.#transactionOptions = {
+      ...transaction,
+      maxRetries: transaction.maxRetries ?? DEFAULT_MYSQL_TRANSACTION_RETRIES,
+    };
   }
 
   get tableName(): string {
@@ -133,16 +203,21 @@ export class MySqlStorageAdapter implements StorageAdapter {
   }
 
   async insert(snapshot: ObjectSnapshot): Promise<ObjectSnapshot> {
+    validateSnapshot(snapshot);
     return this.#insert(this.#pool, snapshot);
   }
 
   async update(snapshot: ObjectSnapshot, expectedVersion: number): Promise<ObjectSnapshot> {
+    validateSnapshot(snapshot);
+    validateExpectedVersion(expectedVersion, true);
     return this.#update(this.#pool, snapshot, expectedVersion);
   }
 
   async saveBatch(writes: readonly StorageBatchWrite[]): Promise<readonly ObjectSnapshot[]> {
     const seen = new Set<string>();
     for (const write of writes) {
+      validateSnapshot(write.snapshot);
+      if (write.kind === "update") validateExpectedVersion(write.expectedVersion, true);
       const key = objectKey(write.snapshot);
       if (seen.has(key)) throw new MetadataError(`Duplicate object batch write '${key}'.`);
       seen.add(key);
@@ -159,10 +234,12 @@ export class MySqlStorageAdapter implements StorageAdapter {
         );
       }
       return results;
-    });
+    }, this.#transactionOptions);
   }
 
   async delete(identity: ObjectIdentity, expectedVersion: number): Promise<void> {
+    validateIdentity(identity);
+    validateExpectedVersion(expectedVersion, false);
     const [result] = await this.#pool.execute<mysql.OkPacket>(
       `DELETE FROM ${this.#table} WHERE object_type = ? AND object_id = ? AND version = ?`,
       [identity.type, identity.id, expectedVersion],
@@ -177,6 +254,7 @@ export class MySqlStorageAdapter implements StorageAdapter {
   }
 
   async get(identity: ObjectIdentity): Promise<ObjectSnapshot | null> {
+    validateIdentity(identity);
     const [rows] = await this.#pool.query<SnapshotRow[]>(
       `SELECT object_type, object_id, schema_version, version, values_json, relationships_json
        FROM ${this.#table}
@@ -188,6 +266,7 @@ export class MySqlStorageAdapter implements StorageAdapter {
   }
 
   async query(query: ObjectQuery): Promise<readonly ObjectSnapshot[]> {
+    validateObjectKeyPart(query.objectType, "type");
     const [rows] = await this.#pool.query<SnapshotRow[]>(
       `SELECT object_type, object_id, schema_version, version, values_json, relationships_json
        FROM ${this.#table}
