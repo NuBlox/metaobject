@@ -10,7 +10,7 @@ M69–M75 exercised the published core contract through the independent MySQL st
 
 M76 hardened package publication metadata, `prepublishOnly` verification and OIDC-ready trusted-publishing workflows. Comparing `v1.0.0-rc.1` with the M75 boundary showed no changes under core `src/`, `test/` or `type-tests/`; M76 likewise introduced no core runtime or declaration change. There is therefore no technical evidence requiring `1.0.0-rc.2`.
 
-M77 now prepares the stable `1.0.0` version/changelog/README promotion while deliberately leaving runtime source and public declarations untouched. The release tag and npm publication remain separate irreversible actions after exact-commit qualification.
+M77 promoted the repository package version/changelog/README to stable `1.0.0` while deliberately leaving runtime source and public declarations untouched. The exact promotion revision passed the complete eight-lane branch qualification and then passed the complete eight-lane push-triggered `main` qualification at commit `8888553005dd11abb6c72f93fd18e0f0f15e1d4b`. The release tag and npm publication remain separate irreversible actions.
 
 ## Completed RC milestones
 
@@ -78,9 +78,9 @@ M77 now prepares the stable `1.0.0` version/changelog/README promotion while del
 - [x] MySQL 8.0/8.4 qualification demonstrates the persistence contracts are externally implementable;
 - [x] post-RC development has not altered core runtime source or public declarations;
 - [x] release publication is protected by pre-publish verification and canonical repository metadata;
-- [ ] the exact M77 `1.0.0` version/changelog/README promotion revision passes the complete branch and merged-`main` qualification matrix;
+- [x] the M77 `1.0.0` promotion passed the complete branch and merged-`main` qualification matrix;
 - [ ] npm trusted publishing is configured for `@nublox/metaobject` against `publish-metaobject.yml`;
-- [ ] the exact `v1.0.0` tag is created from the verified green `main` commit;
+- [ ] the exact `v1.0.0` tag is created from the verified green release-evidence `main` commit;
 - [ ] the tag-triggered publication workflow succeeds;
 - [ ] npm registry verification confirms `@nublox/metaobject@1.0.0`, `Apache-2.0` and `latest: 1.0.0`.
 
