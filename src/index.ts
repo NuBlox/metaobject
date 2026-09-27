@@ -30,6 +30,7 @@ export * from "./modules/runtime-deployment-policy.js";
 export * from "./modules/runtime-deployment-store.js";
 export * from "./modules/runtime-drift-remediation-closure.js";
 export * from "./modules/runtime-drift-remediation.js";
+export * from "./modules/runtime-fleet-control.js";
 export * from "./modules/runtime-posture-response.js";
 export * from "./modules/runtime-posture.js";
 export * from "./modules/runtime-profile-catalog.js";
