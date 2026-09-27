@@ -26,6 +26,8 @@ export interface RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatur
   readonly policyVersion: number;
   readonly rootDigest: string;
   readonly currentStateDigest: string;
+  readonly digestAlgorithm: "SHA-256";
+  readonly canonicalization: "nublox-json-canonical-v1";
   readonly signerId: string;
   readonly algorithm: string;
   readonly keyId: string;
@@ -156,6 +158,8 @@ export class RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatureCat
       policyVersion: integrity.policyVersion,
       rootDigest: integrity.rootDigest,
       currentStateDigest: integrity.currentStateDigest,
+      digestAlgorithm: integrity.algorithm,
+      canonicalization: integrity.canonicalization,
       signerId: provider.signerId,
       algorithm: material.algorithm,
       keyId: material.keyId,
@@ -175,7 +179,13 @@ export class RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatureCat
     validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatureRecord(record);
 
     const integrity = await this.requireIntegrity(record.attestationId);
-    const integrityVerification = await this.integrity.verify(integrity.attestationId);
+    let lifecycleIntegrityValid = false;
+    try {
+      lifecycleIntegrityValid = (await this.integrity.verify(integrity.attestationId)).valid;
+    } catch {
+      lifecycleIntegrityValid = false;
+    }
+
     const payload = lifecycleSignaturePayload(integrity);
     const payloadDigest = await sha256Hex(payload);
     const payloadMatches = record.policyId === integrity.policyId
@@ -185,6 +195,8 @@ export class RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatureCat
       && record.policyVersion === integrity.policyVersion
       && record.rootDigest === integrity.rootDigest
       && record.currentStateDigest === integrity.currentStateDigest
+      && record.digestAlgorithm === integrity.algorithm
+      && record.canonicalization === integrity.canonicalization
       && record.payloadDigest === payloadDigest;
 
     let signatureValid = false;
@@ -203,8 +215,8 @@ export class RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleSignatureCat
 
     return {
       signatureId: record.signatureId,
-      valid: integrityVerification.valid && payloadMatches && signatureValid,
-      lifecycleIntegrityValid: integrityVerification.valid,
+      valid: lifecycleIntegrityValid && payloadMatches && signatureValid,
+      lifecycleIntegrityValid,
       payloadMatches,
       signatureValid,
       verifiedAt: this.clock().toISOString(),
@@ -281,6 +293,9 @@ export function validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleS
   assertPositiveInteger(record.policyVersion, "policyVersion");
   if (record.lifecycleStatus !== "active" && record.lifecycleStatus !== "retired") {
     throw new MetadataError("Invalid recovery evidence trust policy lifecycle signature status.");
+  }
+  if (record.digestAlgorithm !== "SHA-256" || record.canonicalization !== "nublox-json-canonical-v1") {
+    throw new MetadataError("Unsupported recovery evidence trust policy lifecycle signature digest contract.");
   }
   assertDigest(record.rootDigest, "rootDigest");
   assertDigest(record.currentStateDigest, "currentStateDigest");
