@@ -1,7 +1,7 @@
 {
   "name": "@nublox/metaobject-storage-mysql",
-  "version": "0.3.0",
-  "description": "MySQL StorageAdapter and MetadataStore for @nublox/metaobject.",
+  "version": "0.4.0",
+  "description": "MySQL StorageAdapter, MetadataStore and safe query pushdown for @nublox/metaobject.",
   "author": "Stephen J T Spittal",
   "type": "module",
   "sideEffects": false,
