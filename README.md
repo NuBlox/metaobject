@@ -14,7 +14,7 @@ Public API generation: `METAOBJECT_PUBLIC_API_VERSION === "1"`.
 
 Supported Node.js versions: **20, 22 and 24**.
 
-The package is currently **UNLICENSED**. Public npm publication is intentionally deferred until NuBlox explicitly chooses a distribution/licence posture.
+The package is licensed under the **Apache License, Version 2.0**. Copyright © 2026 Stephen J T Spittal. Public npm publication is a separate release action and is not performed merely by applying the licence.
 
 ## Quick start
 
@@ -224,4 +224,6 @@ Use [`docs/index.md`](docs/index.md) as the documentation map.
 
 ## Licensing
 
-`package.json` is intentionally marked `UNLICENSED` for the RC. Repository access does not grant redistribution or reuse rights. Public package publication must not occur until NuBlox explicitly changes the publication/licence decision.
+`@nublox/metaobject` is licensed under the **Apache License, Version 2.0** (`Apache-2.0`). Copyright © 2026 Stephen J T Spittal.
+
+The complete licence text is in [`LICENSE`](LICENSE), and package attribution is in [`NOTICE`](NOTICE). The Apache-2.0 licence grants broad rights to use, modify and redistribute the software subject to its terms, while Section 6 does not grant trademark rights beyond reasonable and customary use in describing the origin of the work.
