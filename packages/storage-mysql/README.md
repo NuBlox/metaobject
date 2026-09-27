@@ -4,7 +4,7 @@ MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented again
 
 ## Status
 
-M73 versioned MySQL schema migrations. Version `0.5.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
+M74 MySQL adapter certification and production-stress hardening. Version `0.6.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
 
 The package remains inside the `NuBlox/metaobject` monorepo while the MetaObject core remains database-neutral and MySQL-free.
 
@@ -50,7 +50,7 @@ const plan = compileMySqlObjectQueryPlan(storage.tableName, {
 console.log(plan.pushedFilters.length, plan.residualFilters.length);
 ```
 
-`initialize()` now runs the versioned physical-schema migration engine before returning. Custom tables, migration-ledger/lock settings and transaction retry policies can be configured independently. Transient MySQL deadlock/lock-timeout failures retry twice by default through `@nublox/mysql`. Optimistic-concurrency failures are not retried as transient lock failures.
+`initialize()` runs the versioned physical-schema migration engine before returning. Custom tables, migration-ledger/lock settings and transaction retry policies can be configured independently. Transient MySQL deadlock/lock-timeout failures retry twice by default through `@nublox/mysql`. Optimistic-concurrency failures are not retried as transient lock failures.
 
 ## Runtime object persistence
 
@@ -92,7 +92,7 @@ The core reference adapter currently uses JavaScript `localeCompare()` for strin
 
 ## M73 schema evolution
 
-The object and metadata physical schemas are now both at version `2` and are managed by an append-only migration ledger. Version `1` remains the immutable pre-M73 baseline; version `2` adds composite indexes used by object/metadata lookup paths.
+The object and metadata physical schemas are both at version `2` and are managed by an append-only migration ledger. Version `1` remains the immutable pre-M73 baseline; version `2` adds composite indexes used by object/metadata lookup paths.
 
 M73 provides:
 
@@ -126,9 +126,31 @@ await migrateMySqlMetadataSchema(pool);
 
 See [`../../docs/mysql-schema-migrations.md`](../../docs/mysql-schema-migrations.md) for the complete lifecycle and failure model.
 
+## M74 certification and stress hardening
+
+M74 adds an executable certification gate above the focused conformance suite. CI now certifies the adapter against MySQL 8.4 with:
+
+- a deterministic 1,200-object corpus compared query-for-query with the core `MemoryStorageAdapter` reference implementation;
+- 16 query shapes spanning pushed equality/membership/null predicates, pagination and residual range/string/order semantics;
+- 400 concurrent reads through a four-connection pool, followed by health/queue/connection-return assertions;
+- 32 concurrent object writers and 32 concurrent metadata writers against one version/revision, requiring one winner and `ConcurrencyError` for every loser;
+- object and metadata batch rollback probes where multiple valid writes execute before an intentional stale write;
+- 16 concurrent `initialize()` calls against one migration stream using a six-connection pool, requiring one ledger row per schema version;
+- broad elapsed-time regression guardrails plus machine-readable `M74_CERTIFICATION` evidence lines.
+
+The first recorded CI run on MySQL 8.4.11 completed the 1,200-object seed in 554.5 ms, the 16-query matrix in 166.9 ms, 400 pooled reads in 96.2 ms, 32-way object+metadata contention in 38.8 ms and the 16-initializer migration stampede in 99.5 ms. These are revision evidence, **not production SLOs**.
+
+Run the live certification locally with:
+
+```bash
+npm run test:live
+```
+
+See [`../../docs/mysql-m74-certification.md`](../../docs/mysql-m74-certification.md) for the acceptance model, thresholds and evidence boundary.
+
 ## Conformance
 
-CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.4, followed by M70/M71 concurrency/tamper tests, M72 live query-equivalence cases and M73 migration fresh-install/upgrade/race/drift/tamper coverage.
+CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.4, followed by M70/M71 concurrency/tamper tests, M72 live query-equivalence cases, M73 migration fresh-install/upgrade/race/drift/tamper coverage and the M74 certification stress gate.
 
 ## License
 
