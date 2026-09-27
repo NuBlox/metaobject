@@ -4,18 +4,20 @@ This document defines the finite gate for the first `@nublox/metaobject` v1.0 re
 
 ## Current position
 
-The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, and the M49–M61 integrity/trust chain.
+The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, and the M49–M62 integrity/trust chain.
 
 The first RC should be cut when the existing scope is hardened and documented. New product features are not RC blockers unless they close one of the gates below.
 
 ## Proposed remaining milestones
 
-### M62 — Trust-root chain verification
+### M62 — Trust-root chain verification ✅
 
-- verify an entire M59/M60/M61 supersession chain from any historical snapshot to the current active root;
-- expose deterministic current-root resolution;
-- reject forks, cycles, missing links, digest mismatches, and multiple active tips;
-- keep historical bindings reproducible.
+Implemented:
+
+- verifies M59 snapshot digests, M60 governance replay and M61 rotation replay as one authority chain;
+- deterministically resolves exactly one active authoritative root;
+- rejects forks, merges, cycles, incomplete rotations, missing exact governance links, digest mismatches, multiple active roots and disconnected completed rotation islands;
+- returns the complete oldest-to-current authority lineage without rewriting historical evidence.
 
 ### M63 — Public API stabilization
 
@@ -43,7 +45,7 @@ The first RC should be cut when the existing scope is hardened and documented. N
 ### M66 — Documentation convergence
 
 - bring the README implemented-scope and roadmap sections up to the current milestone;
-- add architecture/index documentation for M14–M61;
+- add architecture/index documentation for M14–M62;
 - provide minimal end-to-end examples for metadata definition, persistence, modules, runtime control, and trust verification;
 - document stability/compatibility guarantees and extension points.
 
@@ -66,7 +68,7 @@ The first RC should be cut when the existing scope is hardened and documented. N
 
 `v1.0.0-rc.1` is ready only when all of the following are true:
 
-- [ ] trust-root supersession resolves to one unambiguous current authority;
+- [x] trust-root supersession resolves to one unambiguous current authority;
 - [ ] public API surface is reviewed and intentionally exported;
 - [ ] storage/persistence adapter contracts have a reusable conformance suite;
 - [ ] package contents and clean-consumer imports are CI-verified;
