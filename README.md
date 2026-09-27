@@ -166,7 +166,7 @@ The MySQL adapter package lives at [`packages/storage-mysql`](packages/storage-m
 @nublox/metaobject-storage-mysql
 ```
 
-M69 established runtime-object persistence, M70 hardened the production persistence/concurrency boundary, M71 added transactional MySQL metadata persistence, M72 added contract-preserving MySQL query translation, M73 added versioned physical-schema migrations, and M74 adds executable MySQL certification and stress hardening. SQL-safe equality, membership and null predicates plus eligible pagination are pushed through NuBloxSQL server-side prepared statements; range/string predicates and attribute ordering remain deterministic JavaScript fallbacks where the current core comparison contract cannot yet be proven equivalent to MySQL collation semantics. Physical object/metadata schemas use an append-only checksummed migration ledger, serialized initialization, legacy-v1 adoption, crash-recoverable reconciliation and structural drift detection. M74 then certifies those behaviours with large-dataset reference equivalence, pool pressure, high-contention optimistic concurrency, transactional rollback and migration-stampede workloads. The package depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free.
+M69 established runtime-object persistence, M70 hardened the production persistence/concurrency boundary, M71 added transactional MySQL metadata persistence, M72 added contract-preserving MySQL query translation, M73 added versioned physical-schema migrations, M74 added executable MySQL certification and stress hardening, and M75 adds clean external-consumer plus MySQL-version release qualification. SQL-safe equality, membership and null predicates plus eligible pagination are pushed through NuBloxSQL server-side prepared statements; range/string predicates and attribute ordering remain deterministic JavaScript fallbacks where the current core comparison contract cannot yet be proven equivalent to MySQL collation semantics. Physical object/metadata schemas use an append-only checksummed migration ledger, serialized initialization, legacy-v1 adoption, crash-recoverable reconciliation and structural drift detection. M74 certifies those behaviours with large-dataset reference equivalence, pool pressure, high-contention optimistic concurrency, transactional rollback and migration-stampede workloads. M75 then packs the adapter and consumes it from a separate temporary project on Node.js 22/24 while the live certification suite runs against both MySQL 8.0 and 8.4. The package depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free.
 
 Planned siblings remain:
 
@@ -182,7 +182,7 @@ runStorageAdapterConformance(...)
 runMetadataStoreConformance(...)
 ```
 
-See [`docs/storage-adapter-conformance.md`](docs/storage-adapter-conformance.md), [`docs/mysql-storage-m70-hardening.md`](docs/mysql-storage-m70-hardening.md), [`docs/mysql-metadata-store.md`](docs/mysql-metadata-store.md), [`docs/mysql-query-m72-pushdown.md`](docs/mysql-query-m72-pushdown.md), [`docs/mysql-schema-migrations.md`](docs/mysql-schema-migrations.md) and [`docs/mysql-m74-certification.md`](docs/mysql-m74-certification.md).
+See [`docs/storage-adapter-conformance.md`](docs/storage-adapter-conformance.md), [`docs/mysql-storage-m70-hardening.md`](docs/mysql-storage-m70-hardening.md), [`docs/mysql-metadata-store.md`](docs/mysql-metadata-store.md), [`docs/mysql-query-m72-pushdown.md`](docs/mysql-query-m72-pushdown.md), [`docs/mysql-schema-migrations.md`](docs/mysql-schema-migrations.md), [`docs/mysql-m74-certification.md`](docs/mysql-m74-certification.md) and [`docs/mysql-m75-release-qualification.md`](docs/mysql-m75-release-qualification.md).
 
 ## Public API compatibility
 
@@ -213,7 +213,7 @@ npm run release:check
 
 `release:check` runs the full test gate, validates npm package contents, builds a real tarball, installs it into a clean consumer and verifies both ESM runtime imports and TypeScript declarations.
 
-CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The MySQL package has an additional Node.js 22 + MySQL 8.4 job covering both public persistence conformance suites, M70/M71 race/tamper hardening, M72 live query-pushdown/fallback equivalence, M73 fresh-install/upgrade/concurrent-initializer/drift/ledger-integrity migration cases, and the M74 large-dataset/contention/rollback/pool-pressure/migration-stampede certification gate.
+CI executes the complete core typecheck/build/test gate on Node.js 20, 22 and 24. The MySQL adapter adds clean packed-consumer verification on Node.js 22 and 24, plus independent MySQL 8.0 and 8.4 live lanes covering public persistence conformance, M70/M71 race/tamper hardening, M72 query-pushdown/fallback equivalence, M73 migration install/upgrade/race/drift/ledger-integrity handling and the M74 large-dataset/contention/rollback/pool-pressure/migration-stampede certification gate.
 
 ## RC roadmap
 
@@ -230,6 +230,7 @@ CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The
 - **M72 — MySQL query translation and safe SQL pushdown** ✅
 - **M73 — Versioned MySQL physical-schema migrations and drift detection** ✅
 - **M74 — MySQL adapter certification and production-stress hardening** ✅
+- **M75 — MySQL adapter external-consumer and release qualification** 🚧
 
 The finite RC gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 
