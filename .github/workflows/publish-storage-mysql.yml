@@ -1,0 +1,47 @@
+name: Publish MySQL storage adapter
+
+on:
+  push:
+    tags:
+      - "storage-mysql-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish @nublox/metaobject-storage-mysql
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/storage-mysql
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Use trusted-publishing-capable npm
+        run: npm install --global npm@^11.15.0
+
+      - name: Verify release tag and main ancestry
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "storage-mysql-v${VERSION}"
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+
+      - name: Install dependencies
+        run: npm install --package-lock=false
+
+      - name: Run complete package release gate
+        run: npm run release:check
+
+      - name: Publish under protected next tag
+        run: npm publish
