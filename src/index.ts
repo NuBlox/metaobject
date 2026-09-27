@@ -33,6 +33,7 @@ export * from "./modules/runtime-drift-remediation.js";
 export * from "./modules/runtime-fleet-control.js";
 export * from "./modules/runtime-fleet-convergence-dispatch.js";
 export * from "./modules/runtime-fleet-convergence-execution.js";
+export * from "./modules/runtime-fleet-convergence-fair-dispatch.js";
 export {
   MemoryRuntimeFleetConvergenceFairnessStore,
   RuntimeFleetConvergenceFairnessCatalog,
