@@ -230,8 +230,14 @@ export function replayRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExt
 
   const ordered = [...events].sort((a, b) => a.revision - b.revision || a.eventId.localeCompare(b.eventId));
   let state: RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExternalTrustRootSnapshotGovernanceState | null = null;
+  let previousOccurredAt: number | undefined;
   for (const [index, event] of ordered.entries()) {
     validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExternalTrustRootSnapshotGovernanceEventRecord(event);
+    const occurredAt = Date.parse(event.occurredAt);
+    if (previousOccurredAt !== undefined && occurredAt < previousOccurredAt) {
+      throw new MetadataError(`External trust root snapshot '${snapshotId}' governance timestamps are not monotonic.`);
+    }
+    previousOccurredAt = occurredAt;
     if (event.snapshotId !== snapshotId) throw new MetadataError(`Governance event '${event.eventId}' belongs to another snapshot.`);
     const expectedRevision = index + 1;
     if (event.revision !== expectedRevision) {

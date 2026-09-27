@@ -6,6 +6,18 @@ The project follows Semantic Versioning once the v1 public API is released. Pre-
 
 ## Unreleased
 
+## 0.67.0
+
+### Added
+
+- Release-candidate adversarial matrix covering malformed governance/rotation histories, duplicate trust-root evidence, missing exact governance provenance, frozen-digest rewriting and canonical digest permutations.
+- M67 adversarial-hardening audit documentation.
+
+### Fixed
+
+- M60 external trust-root governance replay now rejects backward timestamp regression.
+- M61 external trust-root rotation replay now rejects backward timestamp regression.
+
 ## 0.66.0
 
 ### Added

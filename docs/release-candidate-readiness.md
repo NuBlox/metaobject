@@ -4,9 +4,9 @@ This document defines the finite gate for the first `@nublox/metaobject` v1.0 re
 
 ## Current position
 
-The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, the M49–M62 integrity/trust chain, a stabilized M63 public API, reusable M64 adapter conformance, M65 release engineering and converged M66 documentation.
+The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, the M49–M62 integrity/trust chain, a stabilized M63 public API, reusable M64 adapter conformance, M65 release engineering, converged M66 documentation, and M67 adversarial hardening.
 
-The first RC should be cut when the existing scope is hardened and documented. New product features are not RC blockers unless they close one of the gates below.
+The remaining milestone is the M68 `v1.0.0-rc.1` cut from a reproducibly green `main` commit.
 
 ## Proposed remaining milestones
 
@@ -55,26 +55,29 @@ Implemented:
 
 Implemented:
 
-- README current scope and RC roadmap now match M0–M65 implementation;
-- architecture documentation describes runtime, persistence, modules, deployment, fleet convergence and trust layers through M65;
-- a documentation index groups the package docs by architectural concern;
-- end-to-end examples cover metadata definition/persistence, module runtime reconstruction, runtime control, trust verification, adapter conformance and release verification;
+- README current scope and RC roadmap match the implementation;
+- architecture documentation describes runtime, persistence, modules, deployment, fleet convergence and trust layers;
+- a documentation index groups package docs by architectural concern;
+- end-to-end examples cover metadata, modules, runtime control, trust verification, adapter conformance and release verification;
 - stability, extension-point, package-boundary and publication expectations are linked from the main package documentation.
 
-### M67 — Adversarial hardening
+### M67 — Adversarial hardening ✅
 
-- add malformed-input and replay/tamper matrices across portable formats;
-- add boundary/property-style tests for canonicalization, revisions, lifecycle replay, and graph invariants;
-- audit fail-open paths and exception handling;
-- run clean install, build, typecheck, tests, and package-consumer verification on the supported Node matrix.
+Implemented:
+
+- audits existing malformed-input, replay and tamper coverage across persistence, journals, portable evidence and trust formats;
+- adds an RC adversarial matrix for M59–M62 duplicate/tampered/missing provenance and canonicalization cases;
+- hardens M60 governance and M61 rotation replay so event timestamps may be equal but can never regress in revision order;
+- preserves fail-closed behavior for unsupported formats, broken revisions/stages, frozen identity mutation, graph ambiguity and digest mismatch;
+- records the audit conclusion and remaining RC verification boundary in `docs/adversarial-hardening.md`.
 
 ### M68 — `v1.0.0-rc.1`
 
 - freeze feature scope;
-- close all RC-blocking defects;
-- confirm public API review;
-- confirm documentation and release metadata;
-- tag and build the release candidate from a green `main` commit.
+- confirm every RC gate on the exact release commit;
+- set package/release metadata to `1.0.0-rc.1`;
+- run the complete supported-Node and clean-consumer release gate;
+- tag the verified green `main` commit as `v1.0.0-rc.1`.
 
 ## RC gate
 
@@ -86,8 +89,8 @@ Implemented:
 - [x] package contents and clean-consumer imports are CI-verified;
 - [x] supported Node versions are tested explicitly;
 - [x] README and architecture documentation match implemented scope;
-- [ ] portable evidence formats have adversarial/tamper coverage;
-- [ ] no known fail-open trust, lifecycle, concurrency, or persistence defect remains;
+- [x] portable evidence formats have adversarial/tamper coverage;
+- [x] no known fail-open trust, lifecycle, concurrency, or persistence defect remains;
 - [x] licence/publication status is intentionally decided;
 - [ ] `main` is green and the RC commit is reproducible.
 
