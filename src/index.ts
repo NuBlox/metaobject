@@ -21,6 +21,7 @@ export * from "./modules/module-catalog.js";
 export * from "./modules/module-set.js";
 export * from "./modules/module-store.js";
 export * from "./modules/persistent-module-release.js";
+export * from "./modules/runtime-control-cycle.js";
 export * from "./modules/runtime-deployment-attestation.js";
 export * from "./modules/runtime-deployment-catalog.js";
 export * from "./modules/runtime-deployment-drift.js";
