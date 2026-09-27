@@ -8,13 +8,13 @@ It deliberately contains no NuBlox product UI, tenant/business-domain model or d
 
 ## Current status
 
-**`v1.0.0-rc.1` is ready for tagging from an exact green `main` commit.** The finite M62–M68 release-candidate plan is complete.
+**`v1.0.0-rc.1` is published on npm under the `next` dist-tag.** The finite M62–M68 release-candidate plan is complete and the core package is now in RC soak/fix-only mode.
 
 Public API generation: `METAOBJECT_PUBLIC_API_VERSION === "1"`.
 
 Supported Node.js versions: **20, 22 and 24**.
 
-The package is licensed under the **Apache License, Version 2.0**. Copyright © 2026 Stephen J T Spittal. Public npm publication is a separate release action and is not performed merely by applying the licence.
+The package is licensed under the **Apache License, Version 2.0**. Copyright © 2026 Stephen J T Spittal.
 
 ## Quick start
 
@@ -158,10 +158,19 @@ See [`docs/architecture.md`](docs/architecture.md) and [`docs/index.md`](docs/in
 
 ## Storage adapters
 
-Core contains the `StorageAdapter` contract and `MemoryStorageAdapter` reference implementation. Database-specific adapters remain separate packages, for example:
+Core contains the `StorageAdapter` contract and `MemoryStorageAdapter` reference implementation. Database-specific adapters remain separate packages.
+
+M69 introduces the first external adapter package in this repository at [`packages/storage-mysql`](packages/storage-mysql):
 
 ```text
 @nublox/metaobject-storage-mysql
+```
+
+It depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free. CI runs the public `StorageAdapter` conformance suite against a real MySQL service.
+
+Planned siblings remain:
+
+```text
 @nublox/metaobject-storage-postgresql
 @nublox/metaobject-storage-sqlite
 ```
@@ -204,7 +213,7 @@ npm run release:check
 
 `release:check` runs the full test gate, validates npm package contents, builds a real tarball, installs it into a clean consumer and verifies both ESM runtime imports and TypeScript declarations.
 
-CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24.
+CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The M69 adapter has an additional Node.js 22 + MySQL 8.4 conformance job.
 
 ## RC roadmap
 
@@ -214,9 +223,10 @@ CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24.
 - **M65 — Release engineering** ✅
 - **M66 — Documentation convergence** ✅
 - **M67 — Adversarial hardening** ✅
-- **M68 — `v1.0.0-rc.1`** ✅ ready for tag
+- **M68 — `v1.0.0-rc.1`** ✅ published
+- **M69 — MySQL storage-adapter foundation** 🚧
 
-The finite gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
+The finite RC gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 
 ## Documentation
 
