@@ -4,7 +4,7 @@ This document defines the finite gate for the first `@nublox/metaobject` v1.0 re
 
 ## Current position
 
-The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, the M49–M62 integrity/trust chain, a stabilized M63 public API, reusable M64 adapter conformance, and M65 release-engineering verification.
+The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, the M49–M62 integrity/trust chain, a stabilized M63 public API, reusable M64 adapter conformance, M65 release engineering and converged M66 documentation.
 
 The first RC should be cut when the existing scope is hardened and documented. New product features are not RC blockers unless they close one of the gates below.
 
@@ -51,12 +51,15 @@ Implemented:
 - `CHANGELOG.md` and release-note conventions are established;
 - publication/licence status is intentionally `UNLICENSED`: no public npm publication until NuBlox explicitly changes that decision.
 
-### M66 — Documentation convergence
+### M66 — Documentation convergence ✅
 
-- bring the README implemented-scope and roadmap sections up to the current milestone;
-- add architecture/index documentation for M14–M65;
-- provide minimal end-to-end examples for metadata definition, persistence, modules, runtime control, and trust verification;
-- document stability/compatibility guarantees and extension points.
+Implemented:
+
+- README current scope and RC roadmap now match M0–M65 implementation;
+- architecture documentation describes runtime, persistence, modules, deployment, fleet convergence and trust layers through M65;
+- a documentation index groups the package docs by architectural concern;
+- end-to-end examples cover metadata definition/persistence, module runtime reconstruction, runtime control, trust verification, adapter conformance and release verification;
+- stability, extension-point, package-boundary and publication expectations are linked from the main package documentation.
 
 ### M67 — Adversarial hardening
 
@@ -82,7 +85,7 @@ Implemented:
 - [x] storage/persistence adapter contracts have a reusable conformance suite;
 - [x] package contents and clean-consumer imports are CI-verified;
 - [x] supported Node versions are tested explicitly;
-- [ ] README and architecture documentation match implemented scope;
+- [x] README and architecture documentation match implemented scope;
 - [ ] portable evidence formats have adversarial/tamper coverage;
 - [ ] no known fail-open trust, lifecycle, concurrency, or persistence defect remains;
 - [x] licence/publication status is intentionally decided;
