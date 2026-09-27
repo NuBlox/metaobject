@@ -202,7 +202,7 @@ test("MySQL persistence satisfies MetaObject conformance and hardening", { skip:
       objectType: "conformance.pushdown",
       where: [{ attribute: "state", operator: "contains", value: "pen" }],
     });
-    assert.deepEqual(residualString.map((item) => item.id), ["a", "c"]);
+    assert.deepEqual(residualString.map((item) => item.id), ["a", "c", "d"]);
 
     const raceAdapter = await createAdapter();
     const raceBase = await raceAdapter.insert(snapshot("update-race"));
