@@ -1,12 +1,12 @@
 # @nublox/metaobject-storage-mysql
 
-MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented against the public `StorageAdapter` contract and the NuBlox [`@nublox/mysql`](https://www.npmjs.com/package/@nublox/mysql) client.
+MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented against the public `StorageAdapter` and `MetadataStore` contracts using the NuBlox [`@nublox/mysql`](https://www.npmjs.com/package/@nublox/mysql) client.
 
 ## Status
 
-M70 production persistence/concurrency hardening. Version `0.2.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
+M71 MySQL metadata persistence. Version `0.3.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
 
-The package is intentionally separate from the MetaObject core runtime while remaining in the same `NuBlox/metaobject` repository. Core remains database-neutral and does not depend on MySQL.
+The package remains inside the `NuBlox/metaobject` monorepo while the MetaObject core remains database-neutral and MySQL-free.
 
 ## Requirements
 
@@ -19,7 +19,10 @@ The package is intentionally separate from the MetaObject core runtime while rem
 
 ```ts
 import { createPool } from "@nublox/mysql/promise";
-import { MySqlStorageAdapter } from "@nublox/metaobject-storage-mysql";
+import {
+  MySqlMetadataStore,
+  MySqlStorageAdapter,
+} from "@nublox/metaobject-storage-mysql";
 
 const pool = createPool({
   host: "127.0.0.1",
@@ -32,18 +35,17 @@ const pool = createPool({
 });
 
 const storage = new MySqlStorageAdapter(pool);
+const metadata = new MySqlMetadataStore(pool);
+
 await storage.initialize();
-
-// Pass `storage` anywhere the MetaObject `StorageAdapter` contract is expected.
-
-await pool.end();
+await metadata.initialize();
 ```
 
-A custom table and transaction retry policy may be selected explicitly:
+Custom tables and transaction retry policies can be configured independently:
 
 ```ts
-const storage = new MySqlStorageAdapter(pool, {
-  tableName: "tenant_42_metaobjects",
+const metadata = new MySqlMetadataStore(pool, {
+  tableName: "tenant_42_metadata",
   transaction: {
     maxRetries: 3,
     retryDelayMs: 25,
@@ -52,61 +54,52 @@ const storage = new MySqlStorageAdapter(pool, {
 });
 ```
 
-Atomic batch transactions retry transient MySQL deadlock/lock-timeout failures twice by default through `@nublox/mysql`; callers may override the transaction options shown above. Optimistic-concurrency failures are not transient MySQL lock errors and are not retried by the default policy.
+Transient MySQL deadlock/lock-timeout failures retry twice by default through `@nublox/mysql`. Optimistic-concurrency failures are not retried as transient lock failures.
 
-## Persistence model
+## Runtime object persistence
 
-The adapter uses one InnoDB table keyed by `(object_type, object_id)`:
+`MySqlStorageAdapter` stores runtime object snapshots in InnoDB keyed by `(object_type, object_id)` with optimistic object versions, atomic batches, detached reads and the public query contract.
 
-- `schema_version` preserves the MetaObject schema revision bound to the snapshot;
-- `version` implements optimistic object concurrency;
-- `values_json` stores a versioned NuBlox value envelope as `LONGTEXT`;
-- `relationships_json` stores the relationship snapshot using the same lossless `LONGTEXT` envelope;
-- `JSON_VALID(...)` checks ensure both envelopes remain valid JSON;
-- MySQL timestamps record row creation/update time without becoming part of the MetaObject snapshot contract.
+The bounded lossless codec preserves `Date`, `BigInt`, `undefined`, `NaN`, infinities and negative zero while rejecting cycles, accessors, sparse arrays, malformed canonical values and hostile/tampered payloads.
 
-The envelopes are deliberately stored as text rather than MySQL's native `JSON` type. MySQL normalizes JSON object member ordering, whereas the MetaObject RC conformance boundary requires an exact snapshot round trip including record member order. Validated text preserves the encoded order without weakening JSON validity.
+## Metadata persistence
 
-The value codec preserves values that ordinary JSON would silently lose or coerce, including `Date`, `BigInt`, `undefined`, `NaN`, positive/negative infinity and negative zero.
+M71 adds `MySqlMetadataStore`, backed by a separate InnoDB table keyed by `(object_type_id, object_type_version)`.
 
-## M70 hardening
+Each record stores:
 
-M70 closes production-boundary gaps around object persistence and concurrency:
+- metadata status (`draft`, `published`, `deprecated`);
+- an optimistic `revision`;
+- the normalized metadata snapshot in the same bounded lossless envelope used by object persistence;
+- exact `createdAt` and `updatedAt` strings from the MetaObject contract.
 
-- object type/id lengths and schema-version range are validated before SQL execution;
-- updates fail before overflow beyond JavaScript's safe-integer version range;
-- cyclic object graphs, sparse arrays, accessor-backed values and enumerable symbol-keyed data fail closed;
-- codec traversal is bounded by maximum depth and node count;
-- malformed persisted `Date`, `BigInt` and canonical-number encodings fail closed on read;
-- `__proto__` is decoded as ordinary own data without mutating object prototypes;
-- `saveBatch` uses transient deadlock/lock-timeout retry support from `@nublox/mysql`;
-- live MySQL tests prove that two writers sharing the same expected version have exactly one winner;
-- live update-versus-delete races likewise have exactly one winner;
-- deliberately tampered persisted envelopes are rejected during reads.
+The metadata envelope is stored as validated `LONGTEXT` rather than native MySQL `JSON`, preserving exact record-member order required by the current RC conformance suite while retaining `JSON_VALID(...)` enforcement.
 
-## Contract guarantees
+### Metadata guarantees
 
-The adapter implements the complete `StorageAdapter` surface from the RC:
+`MySqlMetadataStore` implements the complete RC `MetadataStore` contract:
 
-- first insert persists version `1`;
-- duplicate insert fails without replacement;
-- update and delete use optimistic version checks;
-- `saveBatch` is atomic using an InnoDB transaction and preserves request-result ordering;
-- missing delete is idempotent;
-- reads return detached snapshots;
-- the legacy storage query contract supports filtering, ordering, offset and limit with semantics matching the in-memory reference adapter.
+- first save assigns revision `1`;
+- existing records require the matching expected revision;
+- updates increment revision and preserve the original `createdAt`;
+- `saveBatch` is atomic, ordered and duplicate-key guarded;
+- list filtering by object type/status is deterministic;
+- delete is optimistic and missing delete is idempotent;
+- reads are detached;
+- metadata identity/version is checked against the normalized snapshot;
+- write transactions use row locking plus optimistic revision predicates;
+- concurrent save/save and save/delete races have exactly one winner;
+- semantically tampered stored snapshots fail closed during reads.
 
-CI runs `runStorageAdapterConformance` from the published MetaObject RC against a real MySQL 8.4 service, then executes the additional M70 race/tamper tests.
+CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.4, followed by the M70/M71 race and tamper tests.
 
 ## Query strategy
 
-M69/M70 deliberately prioritize semantic equivalence over premature SQL translation. `query()` restricts by object type in SQL and applies attribute predicates/order/pagination after decoding snapshots.
-
-SQL push-down for supported predicates, deterministic database ordering, pagination planning and indexes belong to the later query-translation milestone. Keeping this boundary explicit prevents MySQL-specific behavior from leaking into the core contract.
+Runtime `query()` currently restricts by object type in SQL and applies attribute predicates/order/pagination after decoding snapshots. SQL predicate/order/pagination push-down belongs to the later query-translation milestone.
 
 ## Schema evolution
 
-`initialize()` currently performs idempotent creation of storage schema version `1`. A versioned migration ledger and forward migration runner are intentionally deferred to the schema/migration milestone.
+Both object and metadata tables are currently schema version `1` and are created idempotently. A versioned migration ledger and forward migration runner remain a later milestone.
 
 ## License
 
