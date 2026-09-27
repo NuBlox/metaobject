@@ -1,0 +1,44 @@
+{
+  "name": "@nublox/metaobject-storage-mysql",
+  "version": "0.1.0",
+  "description": "MySQL StorageAdapter for @nublox/metaobject.",
+  "author": "Stephen J T Spittal",
+  "type": "module",
+  "sideEffects": false,
+  "license": "Apache-2.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "npm run build && node --test test/unit.test.mjs",
+    "test:integration": "npm run build && node --test test/mysql-conformance.test.mjs",
+    "test": "npm run test:unit",
+    "check": "npm run typecheck && npm run test:unit && npm run verify:package",
+    "verify:package": "npm run build && node scripts/verify-package.mjs"
+  },
+  "dependencies": {
+    "@nublox/metaobject": "1.0.0-rc.1",
+    "@nublox/mysql": "3.1.0-rc.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
