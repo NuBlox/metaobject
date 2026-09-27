@@ -1,7 +1,7 @@
 {
   "name": "@nublox/metaobject-storage-mysql",
-  "version": "0.6.0",
-  "description": "Certified MySQL StorageAdapter, MetadataStore, safe query pushdown and versioned schema migrations for @nublox/metaobject.",
+  "version": "0.7.0",
+  "description": "Release-qualified MySQL StorageAdapter, MetadataStore, safe query pushdown and versioned schema migrations for @nublox/metaobject.",
   "author": "Stephen J T Spittal",
   "type": "module",
   "sideEffects": false,
@@ -31,7 +31,10 @@
     "test:live": "npm run test:integration && npm run test:certification",
     "test": "npm run test:unit",
     "check": "npm run typecheck && npm run test:unit && npm run verify:package",
-    "verify:package": "npm run build && node scripts/verify-package.mjs"
+    "verify:package": "npm run build && node scripts/verify-package.mjs",
+    "verify:consumer": "npm run build && node scripts/verify-consumer.mjs",
+    "release:check": "npm run check && npm run verify:consumer",
+    "release:check:live": "npm run release:check && npm run test:live"
   },
   "dependencies": {
     "@nublox/metaobject": "1.0.0-rc.1",
