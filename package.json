@@ -6,6 +6,14 @@
   "type": "module",
   "sideEffects": false,
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NuBlox/metaobject.git"
+  },
+  "homepage": "https://github.com/NuBlox/metaobject#readme",
+  "bugs": {
+    "url": "https://github.com/NuBlox/metaobject/issues"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -24,6 +32,7 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json",
     "prepare": "npm run build",
+    "prepublishOnly": "npm run release:check",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.type-tests.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
     "check": "npm run typecheck && npm test",
