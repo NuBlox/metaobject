@@ -19,9 +19,18 @@ try {
     type: "module",
   }, null, 2));
 
+  // The adapter is a Node.js package and @nublox/mysql exposes Node Buffer types.
+  // Model a real strict TypeScript Node consumer by installing the Node declarations
+  // explicitly instead of hiding declaration errors with skipLibCheck.
   execFileSync(
     "npm",
-    ["install", "--ignore-scripts", `./${packed.filename}`, "typescript@^5.8.3"],
+    [
+      "install",
+      "--ignore-scripts",
+      `./${packed.filename}`,
+      "typescript@^5.8.3",
+      "@types/node@^22.0.0",
+    ],
     { cwd: temp, stdio: "inherit" },
   );
 
@@ -81,6 +90,7 @@ try {
       target: "ES2022",
       module: "NodeNext",
       moduleResolution: "NodeNext",
+      types: ["node"],
       strict: true,
       noEmit: true,
       skipLibCheck: false,
