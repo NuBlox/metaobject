@@ -39,6 +39,7 @@ export * from "./modules/runtime-fleet-convergence-handoff-recovery.js";
 export * from "./modules/runtime-fleet-convergence-handoff-resolution.js";
 export * from "./modules/runtime-fleet-convergence-handoff-resolution-execution.js";
 export * from "./modules/runtime-fleet-convergence-handoff-recovery-attestation.js";
+export * from "./modules/runtime-fleet-convergence-handoff-recovery-integrity.js";
 export {
   MemoryRuntimeFleetConvergenceFairnessStore,
   RuntimeFleetConvergenceFairnessCatalog,
