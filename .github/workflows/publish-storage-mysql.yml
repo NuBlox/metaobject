@@ -44,4 +44,4 @@ jobs:
         run: npm run release:check
 
       - name: Publish under protected next tag
-        run: npm publish
+        run: npm publish --access public --tag next
