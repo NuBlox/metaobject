@@ -216,8 +216,9 @@ test("admission history is detached and terminal records are immutable", async (
   });
   result.admission.work[0].workId = "mutated";
   assert.equal((await catalog.get("admission-immutable")).work[0].workId, "immutable");
+  const persisted = await admissions.get("admission-immutable");
   await assert.rejects(
-    () => admissions.save(await admissions.get("admission-immutable"), 2),
+    () => admissions.save(persisted, 2),
     /terminal.*immutable/i,
   );
 });
