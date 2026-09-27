@@ -86,6 +86,17 @@ function admission(request, item) {
   };
 }
 
+function cancelledAdmission(request, item) {
+  const value = admission(request, item);
+  delete value.dispatchOutcome;
+  return {
+    ...value,
+    revision: 1,
+    status: "cancelled",
+    reason: request.reason,
+  };
+}
+
 function request(overrides = {}) {
   return {
     reservationId: "reservation-1",
@@ -115,6 +126,11 @@ function fixture({ dispatcher } = {}) {
       const value = admission(dispatchRequest, item);
       admissions.set(dispatchRequest.admissionId, value);
       return { admission: structuredClone(value) };
+    },
+    async cancel(cancelRequest) {
+      const value = cancelledAdmission(cancelRequest, item);
+      admissions.set(cancelRequest.admissionId, value);
+      return structuredClone(value);
     },
     async resume(id) {
       const value = admissions.get(id);
@@ -149,6 +165,11 @@ test("handoff lock remains exclusive after the finite lease expires while M40 is
             resolve({ admission: structuredClone(value) });
           };
         });
+      },
+      async cancel(cancelRequest) {
+        const value = cancelledAdmission(cancelRequest, item);
+        admissions.set(cancelRequest.admissionId, value);
+        return structuredClone(value);
       },
       async resume(id) {
         const value = admissions.get(id);
@@ -190,6 +211,11 @@ test("a crashed handoff resumes after lease expiry when M40 admission was never 
         admissions.set(dispatchRequest.admissionId, value);
         return { admission: structuredClone(value) };
       },
+      async cancel(cancelRequest) {
+        const value = cancelledAdmission(cancelRequest, item);
+        admissions.set(cancelRequest.admissionId, value);
+        return structuredClone(value);
+      },
       async resume(id) { return { admission: structuredClone(admissions.get(id)) }; },
     }),
   });
@@ -204,11 +230,16 @@ test("a crashed handoff resumes after lease expiry when M40 admission was never 
   assert.equal(resumed.reservation.status, "consumed");
 });
 
-test("handoff can be explicitly released only while no M40 admission exists", async () => {
+test("handoff release creates a cancellation fence before freeing work", async () => {
   const { catalog, admissions, item } = fixture({
     dispatcher: () => ({
       async get(id) { return admissions.has(id) ? structuredClone(admissions.get(id)) : null; },
       async dispatch() { throw new Error("stop before admission"); },
+      async cancel(cancelRequest) {
+        const value = cancelledAdmission(cancelRequest, item);
+        admissions.set(cancelRequest.admissionId, value);
+        return structuredClone(value);
+      },
       async resume(id) { return { admission: structuredClone(admissions.get(id)) }; },
     }),
   });
@@ -220,6 +251,7 @@ test("handoff can be explicitly released only while no M40 admission exists", as
 
   const released = await catalog.release("reservation-1", "operator abandoned handoff", handoff.revision);
   assert.equal(released.status, "released");
+  assert.equal(admissions.get("admission-1").status, "cancelled");
 
   const second = await catalog.reserve(request({
     reservationId: "reservation-2",
@@ -227,16 +259,16 @@ test("handoff can be explicitly released only while no M40 admission exists", as
     dispatchId: "dispatch-2",
   }));
   assert.equal(second.status, "active");
+});
 
-  admissions.set("admission-2", admission({
-    admissionId: "admission-2",
-    fairnessId: "fair-1",
-    dispatchId: "dispatch-2",
-    workerId: "worker-a",
-  }, item));
-  const secondHandoff = await catalog.get("reservation-2");
+test("handoff release is rejected when normal M40 admission already won", async () => {
+  const { catalog, admissions, item } = fixture();
+  const reserved = await catalog.reserve(request());
+  const handoff = await catalog.get(reserved.reservationId);
+  admissions.set("admission-1", admission(request(), item));
+
   await assert.rejects(
-    () => catalog.release("reservation-2", "unsafe", secondHandoff.revision),
+    () => catalog.release("reservation-1", "unsafe", handoff.revision),
     /already has M40 admission/i,
   );
 });

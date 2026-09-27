@@ -15,7 +15,7 @@ import type {
   RuntimeFleetConvergenceWorkItem,
 } from "./runtime-fleet-convergence.js";
 
-export type RuntimeFleetFairDispatchStatus = "admitted" | "completed" | "failed";
+export type RuntimeFleetFairDispatchStatus = "admitted" | "completed" | "failed" | "cancelled";
 
 export interface RuntimeFleetFairDispatchWork {
   readonly workId: string;
@@ -44,6 +44,7 @@ export interface RuntimeFleetFairDispatchRecord {
   readonly work: readonly RuntimeFleetFairDispatchWork[];
   readonly dispatchOutcome?: RuntimeFleetConvergenceDispatchOutcome;
   readonly error?: string;
+  readonly reason?: string;
   readonly admittedAt: string;
   readonly finishedAt?: string;
 }
@@ -138,6 +139,10 @@ export interface RuntimeFleetFairDispatchRequest {
   readonly maxItems?: number;
 }
 
+export interface RuntimeFleetFairDispatchCancellationRequest extends RuntimeFleetFairDispatchRequest {
+  readonly reason: string;
+}
+
 export interface RuntimeFleetFairDispatchResult {
   readonly admission: RuntimeFleetFairDispatchRecord;
   readonly dispatch?: RuntimeFleetConvergenceDispatchRun;
@@ -149,6 +154,10 @@ export type RuntimeFleetFairDispatchClock = () => Date;
  * Bind one exact M39 fairness ordering to one M36 dispatch. M40 preserves the
  * M37 safety set indirectly through immutable M39 provenance, revalidates every
  * M34 revision before admission, and persists the admission before dispatch.
+ *
+ * M43 also permits a terminal cancellation tombstone to compete atomically for
+ * the same admission ID. If cancellation wins, later stale dispatch attempts
+ * cannot create that admission or reach M36.
  */
 export class RuntimeFleetFairDispatcher {
   constructor(
@@ -160,21 +169,14 @@ export class RuntimeFleetFairDispatcher {
   ) {}
 
   async dispatch(request: RuntimeFleetFairDispatchRequest): Promise<RuntimeFleetFairDispatchResult> {
-    assertText(request.admissionId, "admissionId");
-    assertText(request.fairnessId, "fairnessId");
-    assertText(request.dispatchId, "dispatchId");
-    assertText(request.workerId, "workerId");
+    validateRequest(request);
     if (await this.admissions.get(request.admissionId)) {
       throw new ConcurrencyError(`Runtime fleet fair dispatch '${request.admissionId}' already exists.`);
     }
     if (await this.dispatcher.get(request.dispatchId)) {
       throw new ConcurrencyError(`Runtime fleet convergence dispatch '${request.dispatchId}' already exists.`);
     }
-    const maxItems = request.maxItems ?? 100;
-    if (!Number.isSafeInteger(maxItems) || maxItems < 1) {
-      throw new MetadataError("Runtime fleet fair dispatch maxItems must be a positive integer.");
-    }
-
+    const maxItems = maxItemsFor(request.maxItems);
     const evaluation = await this.requireFairness(request.fairnessId);
     const selectedIds = evaluation.orderedWorkIds.slice(0, maxItems);
     const selected = await this.revalidateSelection(evaluation, selectedIds);
@@ -196,6 +198,50 @@ export class RuntimeFleetFairDispatcher {
       admittedAt: this.clock().toISOString(),
     });
     return this.execute(admitted);
+  }
+
+  async cancel(request: RuntimeFleetFairDispatchCancellationRequest): Promise<RuntimeFleetFairDispatchRecord> {
+    validateRequest(request);
+    assertText(request.reason, "cancellation reason");
+    const existing = await this.admissions.get(request.admissionId);
+    if (existing) {
+      if (existing.status === "cancelled") {
+        assertCancellationMatches(existing, request);
+        return existing;
+      }
+      throw new ConcurrencyError(
+        `Runtime fleet fair dispatch '${request.admissionId}' is already '${existing.status}' and cannot be cancelled.`,
+      );
+    }
+    if (await this.dispatcher.get(request.dispatchId)) {
+      throw new ConcurrencyError(
+        `Runtime fleet convergence dispatch '${request.dispatchId}' already exists; fair dispatch '${request.admissionId}' cannot be cancelled.`,
+      );
+    }
+    const maxItems = maxItemsFor(request.maxItems);
+    const evaluation = await this.requireFairness(request.fairnessId);
+    const selectedIds = evaluation.orderedWorkIds.slice(0, maxItems);
+    const selected = await this.revalidateSelection(evaluation, selectedIds);
+    const now = this.clock().toISOString();
+    return this.admissions.create({
+      format: "nublox-metaobject-runtime-fleet-fair-dispatch",
+      formatVersion: 1,
+      admissionId: request.admissionId,
+      revision: 0,
+      status: "cancelled",
+      fairnessId: evaluation.fairnessId,
+      fairnessPolicyId: evaluation.fairnessPolicyId,
+      fairnessPolicyVersion: evaluation.fairnessPolicyVersion,
+      sourceEvaluationId: evaluation.sourceEvaluationId,
+      sourcePolicyId: evaluation.sourcePolicyId,
+      sourcePolicyVersion: evaluation.sourcePolicyVersion,
+      dispatchId: request.dispatchId,
+      workerId: request.workerId,
+      work: selected,
+      reason: request.reason,
+      admittedAt: now,
+      finishedAt: now,
+    });
   }
 
   async resume(admissionId: string): Promise<RuntimeFleetFairDispatchResult> {
@@ -305,6 +351,34 @@ export class RuntimeFleetFairDispatcher {
   }
 }
 
+function validateRequest(request: RuntimeFleetFairDispatchRequest): void {
+  assertText(request.admissionId, "admissionId");
+  assertText(request.fairnessId, "fairnessId");
+  assertText(request.dispatchId, "dispatchId");
+  assertText(request.workerId, "workerId");
+}
+
+function maxItemsFor(value: number | undefined): number {
+  const maxItems = value ?? 100;
+  if (!Number.isSafeInteger(maxItems) || maxItems < 1) {
+    throw new MetadataError("Runtime fleet fair dispatch maxItems must be a positive integer.");
+  }
+  return maxItems;
+}
+
+function assertCancellationMatches(
+  record: RuntimeFleetFairDispatchRecord,
+  request: RuntimeFleetFairDispatchCancellationRequest,
+): void {
+  if (
+    record.fairnessId !== request.fairnessId
+    || record.dispatchId !== request.dispatchId
+    || record.workerId !== request.workerId
+  ) {
+    throw new ConcurrencyError(`Cancelled runtime fleet fair dispatch '${record.admissionId}' does not match the cancellation request.`);
+  }
+}
+
 function assertExactWork(work: RuntimeFleetConvergenceWorkItem, decision: RuntimeFleetConvergenceFairnessDecision): void {
   if (work.status !== "pending") {
     throw new ConcurrencyError(`Runtime fleet convergence work '${work.workId}' is '${work.status}' and cannot be fairly admitted.`);
@@ -335,7 +409,7 @@ function errorMessage(error: unknown): string {
   return "Runtime fleet fair dispatch failed with an unknown error.";
 }
 
-const validStatuses = new Set<RuntimeFleetFairDispatchStatus>(["admitted", "completed", "failed"]);
+const validStatuses = new Set<RuntimeFleetFairDispatchStatus>(["admitted", "completed", "failed", "cancelled"]);
 
 export function validateRuntimeFleetFairDispatchRecord(record: RuntimeFleetFairDispatchRecord): void {
   if (record.format !== "nublox-metaobject-runtime-fleet-fair-dispatch" || record.formatVersion !== 1) {
@@ -377,14 +451,28 @@ export function validateRuntimeFleetFairDispatchRecord(record: RuntimeFleetFairD
   }
 
   if (record.status === "admitted") {
-    if (record.dispatchOutcome !== undefined || record.error !== undefined || record.finishedAt !== undefined) {
+    if (
+      record.dispatchOutcome !== undefined
+      || record.error !== undefined
+      || record.reason !== undefined
+      || record.finishedAt !== undefined
+    ) {
       throw new MetadataError("Admitted runtime fleet fair dispatch cannot contain terminal state.");
     }
   } else if (record.status === "completed") {
-    if (record.dispatchOutcome === undefined || !record.finishedAt?.trim() || record.error !== undefined) {
+    if (
+      record.dispatchOutcome === undefined
+      || !record.finishedAt?.trim()
+      || record.error !== undefined
+      || record.reason !== undefined
+    ) {
       throw new MetadataError("Completed runtime fleet fair dispatch requires dispatchOutcome and finishedAt only.");
     }
-  } else if (!record.error?.trim() || !record.finishedAt?.trim() || record.dispatchOutcome !== undefined) {
-    throw new MetadataError("Failed runtime fleet fair dispatch requires error and finishedAt only.");
+  } else if (record.status === "failed") {
+    if (!record.error?.trim() || !record.finishedAt?.trim() || record.dispatchOutcome !== undefined || record.reason !== undefined) {
+      throw new MetadataError("Failed runtime fleet fair dispatch requires error and finishedAt only.");
+    }
+  } else if (!record.reason?.trim() || !record.finishedAt?.trim() || record.dispatchOutcome !== undefined || record.error !== undefined) {
+    throw new MetadataError("Cancelled runtime fleet fair dispatch requires reason and finishedAt only.");
   }
 }
