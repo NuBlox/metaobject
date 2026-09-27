@@ -31,6 +31,7 @@ export * from "./modules/runtime-deployment-store.js";
 export * from "./modules/runtime-drift-remediation-closure.js";
 export * from "./modules/runtime-drift-remediation.js";
 export * from "./modules/runtime-fleet-control.js";
+export * from "./modules/runtime-fleet-convergence-dispatch.js";
 export * from "./modules/runtime-fleet-convergence-execution.js";
 export * from "./modules/runtime-fleet-convergence.js";
 export * from "./modules/runtime-fleet-reconciliation.js";
