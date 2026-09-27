@@ -115,7 +115,6 @@ test("one predecessor cannot acquire competing successors and one successor cann
     /already has a recorded successor/,
   );
 
-  await rotations.rotate(request);
   await governance.activate("activate-third", "roots-third");
   await assert.rejects(
     rotations.plan({ rotationId: "rotation-reuse-successor", predecessorSnapshotId: "roots-third", successorSnapshotId: "roots-new" }),
