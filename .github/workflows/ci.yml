@@ -10,18 +10,46 @@ permissions:
 
 jobs:
   check:
+    name: check (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
+          cache: npm
 
       - name: Install dependencies
         run: npm install
 
       - name: Typecheck, build and test
         run: npm run check
+
+  package-consumer:
+    name: package and clean consumer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify package contents
+        run: npm run verify:package
+
+      - name: Verify clean consumer
+        run: npm run verify:consumer
