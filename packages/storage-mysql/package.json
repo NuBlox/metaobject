@@ -6,6 +6,19 @@
   "type": "module",
   "sideEffects": false,
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NuBlox/metaobject.git",
+    "directory": "packages/storage-mysql"
+  },
+  "homepage": "https://github.com/NuBlox/metaobject/tree/main/packages/storage-mysql#readme",
+  "bugs": {
+    "url": "https://github.com/NuBlox/metaobject/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -24,6 +37,7 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json",
     "prepare": "npm run build",
+    "prepublishOnly": "npm run release:check",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "npm run build && node --test test/unit.test.mjs test/query-compiler.test.mjs",
     "test:integration": "npm run build && node --test test/mysql-conformance.test.mjs test/mysql-migrations.test.mjs",
