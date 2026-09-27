@@ -341,9 +341,15 @@ export function replayRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExt
   let state: RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExternalTrustRootRotationState | null = null;
   let frozenIdentity: Pick<RuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExternalTrustRootRotationEventRecord,
     "predecessorSnapshotId" | "predecessorDigest" | "successorSnapshotId" | "successorDigest"> | null = null;
+  let previousOccurredAt: number | undefined;
 
   for (const [index, event] of ordered.entries()) {
     validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleExternalTrustRootRotationEventRecord(event);
+    const occurredAt = Date.parse(event.occurredAt);
+    if (previousOccurredAt !== undefined && occurredAt < previousOccurredAt) {
+      throw new MetadataError(`External trust root rotation '${rotationId}' event timestamps are not monotonic.`);
+    }
+    previousOccurredAt = occurredAt;
     if (event.rotationId !== rotationId) throw new MetadataError(`External trust root rotation event '${event.eventId}' belongs to another rotation.`);
     const expectedRevision = index + 1;
     if (event.revision !== expectedRevision || event.type !== expectedTypes[index]) {
@@ -408,7 +414,7 @@ export function validateRuntimeFleetHandoffRecoveryEvidenceTrustPolicyLifecycleE
     successorDigest: record.successorDigest,
   })) assertText(value, label);
   assertRevision(record.revision);
-  if (!( ["planned", "successor-activated", "predecessor-retired", "completed"] as const).includes(record.type)) {
+  if (!(["planned", "successor-activated", "predecessor-retired", "completed"] as const).includes(record.type)) {
     throw new MetadataError(`Unsupported external trust root rotation event type '${record.type}'.`);
   }
   if (!Number.isFinite(Date.parse(record.occurredAt))) throw new MetadataError("External trust root rotation occurredAt must be valid.");
