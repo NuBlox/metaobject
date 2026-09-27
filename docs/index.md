@@ -14,6 +14,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `mysql-query-m72-pushdown.md` — M72 prepared SQL translation, safe predicate pushdown and fallback boundaries.
 - `mysql-schema-migrations.md` — M73 versioned physical-schema migrations, ledger integrity, locking and drift detection.
 - `mysql-m74-certification.md` — M74 large-dataset equivalence, contention, rollback, pool-pressure and migration-stampede certification.
+- `mysql-m75-release-qualification.md` — M75 clean external-consumer, Node matrix and MySQL 8.0/8.4 release qualification.
 - `releasing.md` — supported Node versions, package verification and release procedure.
 - `release-candidate-readiness.md` — finite RC gate and remaining work.
 
@@ -28,6 +29,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `mysql-query-m72-pushdown.md`
 - `mysql-schema-migrations.md`
 - `mysql-m74-certification.md`
+- `mysql-m75-release-qualification.md`
 - `code-generation.md`
 - `schema-evolution.md`
 - `metadata-release-pipeline.md`
@@ -72,6 +74,7 @@ The individual `runtime-fleet-convergence-handoff-recovery-trust-*` documents ar
 - `mysql-query-m72-pushdown.md` — contract-preserving MySQL query translation evidence.
 - `mysql-schema-migrations.md` — physical-schema migration/recovery/drift evidence.
 - `mysql-m74-certification.md` — repeatable MySQL adapter certification, stress evidence and performance regression guardrails.
+- `mysql-m75-release-qualification.md` — packed-package clean-consumer verification and supported MySQL-version qualification.
 - `releasing.md` — package verification and clean-consumer checks.
 - `../CHANGELOG.md` — release history and release-note convention.
 

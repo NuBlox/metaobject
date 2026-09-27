@@ -4,7 +4,7 @@ MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented again
 
 ## Status
 
-M74 MySQL adapter certification and production-stress hardening. Version `0.6.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
+M75 external-consumer and release qualification. Version `0.7.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
 
 The package remains inside the `NuBlox/metaobject` monorepo while the MetaObject core remains database-neutral and MySQL-free.
 
@@ -128,7 +128,7 @@ See [`../../docs/mysql-schema-migrations.md`](../../docs/mysql-schema-migrations
 
 ## M74 certification and stress hardening
 
-M74 adds an executable certification gate above the focused conformance suite. CI now certifies the adapter against MySQL 8.4 with:
+M74 adds an executable certification gate above the focused conformance suite. It certifies the adapter with:
 
 - a deterministic 1,200-object corpus compared query-for-query with the core `MemoryStorageAdapter` reference implementation;
 - 16 query shapes spanning pushed equality/membership/null predicates, pagination and residual range/string/order semantics;
@@ -138,8 +138,6 @@ M74 adds an executable certification gate above the focused conformance suite. C
 - 16 concurrent `initialize()` calls against one migration stream using a six-connection pool, requiring one ledger row per schema version;
 - broad elapsed-time regression guardrails plus machine-readable `M74_CERTIFICATION` evidence lines.
 
-The first recorded CI run on MySQL 8.4.11 completed the 1,200-object seed in 554.5 ms, the 16-query matrix in 166.9 ms, 400 pooled reads in 96.2 ms, 32-way object+metadata contention in 38.8 ms and the 16-initializer migration stampede in 99.5 ms. These are revision evidence, **not production SLOs**.
-
 Run the live certification locally with:
 
 ```bash
@@ -148,9 +146,41 @@ npm run test:live
 
 See [`../../docs/mysql-m74-certification.md`](../../docs/mysql-m74-certification.md) for the acceptance model, thresholds and evidence boundary.
 
+## M75 external-consumer release qualification
+
+M75 verifies the packed adapter from a completely separate temporary project instead of relying only on repository-local imports.
+
+The clean-consumer gate packs the package, installs that tarball with lifecycle scripts disabled, resolves the declared published NuBlox dependencies from npm, runs an ESM runtime import probe, and compiles a strict `NodeNext` TypeScript consumer against the public package declarations.
+
+CI runs this clean-consumer gate on Node.js 22 and 24. The live persistence/certification job also runs independently against MySQL 8.0 and MySQL 8.4.
+
+Run repository-local release qualification with:
+
+```bash
+npm run release:check
+```
+
+With `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD` and `MYSQL_DATABASE` configured, run the complete package + live database qualification with:
+
+```bash
+npm run release:check:live
+```
+
+See [`../../docs/mysql-m75-release-qualification.md`](../../docs/mysql-m75-release-qualification.md) for the exact release boundary and acceptance criteria.
+
 ## Conformance
 
-CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.4, followed by M70/M71 concurrency/tamper tests, M72 live query-equivalence cases, M73 migration fresh-install/upgrade/race/drift/tamper coverage and the M74 certification stress gate.
+CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.0 and 8.4, followed by M70/M71 concurrency/tamper tests, M72 live query-equivalence cases, M73 migration fresh-install/upgrade/race/drift/tamper coverage and the M74 certification stress gate. Separate Node.js 22/24 jobs install the packed adapter into a clean external consumer and verify runtime plus TypeScript package-root consumption.
+
+## Publication
+
+M75 qualifies version `0.7.0` for an explicit release operation but does not publish it automatically. After the exact release commit passes the M75 gates, publish deliberately with:
+
+```bash
+npm publish --access public --tag next
+```
+
+Published versions are immutable; fixes after publication require a new version.
 
 ## License
 
