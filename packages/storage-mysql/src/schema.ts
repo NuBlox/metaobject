@@ -25,11 +25,13 @@ export function createStorageTableSql(tableName = DEFAULT_MYSQL_STORAGE_TABLE): 
     object_id VARCHAR(255) NOT NULL,
     schema_version INT UNSIGNED NOT NULL,
     version BIGINT UNSIGNED NOT NULL,
-    values_json JSON NOT NULL,
-    relationships_json JSON NOT NULL,
+    values_json LONGTEXT NOT NULL,
+    relationships_json LONGTEXT NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (object_type, object_id),
-    KEY idx_metaobject_type (object_type)
+    KEY idx_metaobject_type (object_type),
+    CHECK (JSON_VALID(values_json)),
+    CHECK (JSON_VALID(relationships_json))
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`;
 }
