@@ -230,7 +230,7 @@ CI executes the complete core typecheck/build/test gate on Node.js 20, 22 and 24
 - **M72 — MySQL query translation and safe SQL pushdown** ✅
 - **M73 — Versioned MySQL physical-schema migrations and drift detection** ✅
 - **M74 — MySQL adapter certification and production-stress hardening** ✅
-- **M75 — MySQL adapter external-consumer and release qualification** 🚧
+- **M75 — MySQL adapter external-consumer and release qualification** ✅
 
 The finite RC gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 
