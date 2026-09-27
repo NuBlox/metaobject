@@ -116,6 +116,22 @@ The current CI thresholds are:
 
 The thresholds can be overridden through `M74_*` environment variables for local investigation. CI pins the defaults explicitly so changes to test defaults cannot silently weaken the gate.
 
+## First recorded CI evidence
+
+The first complete M74 certification run executed on GitHub Actions Ubuntu 24.04 with Node.js 22.23.2 and MySQL 8.4.11. It passed every M69-M73 live gate plus all four M74 certification tests.
+
+Observed M74 timings were:
+
+| Evidence point | Observed |
+| --- | ---: |
+| 1,200-object MySQL seed | 554.5 ms |
+| 16-query semantic matrix | 166.9 ms |
+| 400 pooled reads / 4 connections | 96.2 ms |
+| 32-way object + metadata contention | 38.8 ms |
+| 16-initializer migration stampede | 99.5 ms |
+
+The object race produced 31 `ConcurrencyError` losers and one winner; the metadata race did the same. The transactional rollback probes and migration-ledger uniqueness checks also passed. These measurements are retained as evidence of the tested revision, not as future latency promises.
+
 ## Machine-readable evidence
 
 Each certification phase emits one line beginning with:
