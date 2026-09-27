@@ -1,0 +1,88 @@
+# @nublox/metaobject-storage-mysql
+
+MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented against the public `StorageAdapter` contract and the NuBlox [`@nublox/mysql`](https://www.npmjs.com/package/@nublox/mysql) client.
+
+## Status
+
+M69 foundation package. Version `0.1.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
+
+The package is intentionally separate from the MetaObject core runtime. Core remains database-neutral and does not depend on MySQL.
+
+## Requirements
+
+- Node.js 22 or newer
+- MySQL 8.x
+- `@nublox/metaobject@1.0.0-rc.1`
+- `@nublox/mysql@3.1.0-rc.1`
+
+## Usage
+
+```ts
+import { createPool } from "@nublox/mysql/promise";
+import { MySqlStorageAdapter } from "@nublox/metaobject-storage-mysql";
+
+const pool = createPool({
+  host: "127.0.0.1",
+  user: "root",
+  password: "secret",
+  database: "app",
+  timezone: "Z",
+  supportBigNumbers: true,
+  bigNumberStrings: true,
+});
+
+const storage = new MySqlStorageAdapter(pool);
+await storage.initialize();
+
+// Pass `storage` anywhere the MetaObject `StorageAdapter` contract is expected.
+
+await pool.end();
+```
+
+A custom table may be selected with a constrained SQL identifier:
+
+```ts
+const storage = new MySqlStorageAdapter(pool, {
+  tableName: "tenant_42_metaobjects",
+});
+```
+
+## Persistence model
+
+M69 uses one InnoDB table keyed by `(object_type, object_id)`:
+
+- `schema_version` preserves the MetaObject schema revision bound to the snapshot;
+- `version` implements optimistic object concurrency;
+- `values_json` stores a versioned NuBlox value envelope;
+- `relationships_json` stores the relationship snapshot using the same lossless envelope;
+- MySQL timestamps record row creation/update time without becoming part of the MetaObject snapshot contract.
+
+The value codec preserves values that ordinary JSON would silently lose or coerce, including `Date`, `BigInt`, `undefined`, `NaN`, positive/negative infinity and negative zero.
+
+## Contract guarantees
+
+The adapter implements the complete `StorageAdapter` surface from the RC:
+
+- first insert persists version `1`;
+- duplicate insert fails without replacement;
+- update and delete use optimistic version checks;
+- `saveBatch` is atomic using an InnoDB transaction and preserves request-result ordering;
+- missing delete is idempotent;
+- reads return detached snapshots;
+- the legacy storage query contract supports filtering, ordering, offset and limit with semantics matching the in-memory reference adapter.
+
+CI runs `runStorageAdapterConformance` from the published MetaObject RC against a real MySQL service.
+
+## Query strategy
+
+M69 deliberately prioritizes semantic equivalence over premature SQL translation. `query()` restricts by object type in SQL and applies attribute predicates/order/pagination after decoding snapshots.
+
+SQL push-down for supported predicates, deterministic database ordering, pagination planning and indexes belong to the later query-translation milestone. Keeping this boundary explicit prevents MySQL-specific behavior from leaking into the core contract.
+
+## Schema evolution
+
+`initialize()` currently performs idempotent creation of storage schema version `1`. A versioned migration ledger and forward migration runner are intentionally deferred to the schema/migration milestone.
+
+## License
+
+Apache-2.0. Copyright 2026 Stephen J T Spittal.
