@@ -158,15 +158,15 @@ See [`docs/architecture.md`](docs/architecture.md) and [`docs/index.md`](docs/in
 
 ## Storage adapters
 
-Core contains the `StorageAdapter` contract and `MemoryStorageAdapter` reference implementation. Database-specific adapters remain separate packages.
+Core contains the `StorageAdapter` contract and `MemoryStorageAdapter` reference implementation. Database-specific adapters remain separate packages in the same repository unless there is a concrete reason to split them.
 
-M69 introduces the first external adapter package in this repository at [`packages/storage-mysql`](packages/storage-mysql):
+The MySQL adapter package lives at [`packages/storage-mysql`](packages/storage-mysql):
 
 ```text
 @nublox/metaobject-storage-mysql
 ```
 
-It depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free. CI runs the public `StorageAdapter` conformance suite against a real MySQL service.
+M69 established the MySQL foundation. M70 hardens its production persistence boundary with bounded/fail-closed codec handling, identity/schema/version validation, transient transaction retries, and live concurrent-write race tests. The package depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free.
 
 Planned siblings remain:
 
@@ -213,7 +213,7 @@ npm run release:check
 
 `release:check` runs the full test gate, validates npm package contents, builds a real tarball, installs it into a clean consumer and verifies both ESM runtime imports and TypeScript declarations.
 
-CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The M69 adapter has an additional Node.js 22 + MySQL 8.4 conformance job.
+CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The MySQL adapter has an additional Node.js 22 + MySQL 8.4 job covering public conformance plus M70 race/tamper hardening.
 
 ## RC roadmap
 
@@ -225,6 +225,7 @@ CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The
 - **M67 — Adversarial hardening** ✅
 - **M68 — `v1.0.0-rc.1`** ✅ published
 - **M69 — MySQL storage-adapter foundation** ✅
+- **M70 — Production persistence/concurrency hardening** 🚧
 
 The finite RC gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 
