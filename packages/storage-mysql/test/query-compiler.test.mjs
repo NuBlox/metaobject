@@ -27,7 +27,12 @@ test("attribute names remain bound JSON paths instead of SQL text", () => {
   });
 
   assert.equal(plan.sql.includes(attribute), false);
-  assert.ok(plan.parameters.some((value) => typeof value === "string" && value.includes(attribute)));
+  const paths = plan.parameters.filter(
+    (value) => typeof value === "string" && value.startsWith('$."value"."value".'),
+  );
+  assert.ok(paths.length >= 2);
+  assert.ok(paths.every((value) => value.includes("OR 1 = 1 --")));
+  assert.ok(paths.every((value) => value.includes('\\"')));
 });
 
 test("comparison and string predicates remain residual to preserve core semantics", () => {
