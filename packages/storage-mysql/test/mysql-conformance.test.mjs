@@ -110,6 +110,100 @@ test("MySQL persistence satisfies MetaObject conformance and hardening", { skip:
     assert.equal(loaded.values.negativeInfinity, -Infinity);
     assert.equal(Object.is(loaded.values.negativeZero, -0), true);
 
+    const queryAdapter = await createAdapter();
+    await queryAdapter.saveBatch([
+      {
+        kind: "insert",
+        snapshot: {
+          id: "a",
+          type: "conformance.pushdown",
+          schemaVersion: 1,
+          version: 0,
+          values: { score: 10, state: "open", nullable: null },
+          relationships: {},
+        },
+      },
+      {
+        kind: "insert",
+        snapshot: {
+          id: "b",
+          type: "conformance.pushdown",
+          schemaVersion: 1,
+          version: 0,
+          values: { score: 20, state: "closed", nullable: undefined },
+          relationships: {},
+        },
+      },
+      {
+        kind: "insert",
+        snapshot: {
+          id: "c",
+          type: "conformance.pushdown",
+          schemaVersion: 1,
+          version: 0,
+          values: { score: 20, state: "open", nullable: "value" },
+          relationships: {},
+        },
+      },
+      {
+        kind: "insert",
+        snapshot: {
+          id: "d",
+          type: "conformance.pushdown",
+          schemaVersion: 1,
+          version: 0,
+          values: { score: Number.NaN, state: "pending" },
+          relationships: {},
+        },
+      },
+    ]);
+
+    const pagedEquality = await queryAdapter.query({
+      objectType: "conformance.pushdown",
+      where: [{ attribute: "score", operator: "eq", value: 20 }],
+      offset: 1,
+      limit: 1,
+    });
+    assert.deepEqual(pagedEquality.map((item) => item.id), ["c"]);
+
+    const stateIn = await queryAdapter.query({
+      objectType: "conformance.pushdown",
+      where: [{ attribute: "state", operator: "in", value: ["open", "pending"] }],
+    });
+    assert.deepEqual(stateIn.map((item) => item.id), ["a", "c", "d"]);
+
+    const nullable = await queryAdapter.query({
+      objectType: "conformance.pushdown",
+      where: [{ attribute: "nullable", operator: "isNull" }],
+    });
+    assert.deepEqual(nullable.map((item) => item.id), ["a", "b", "d"]);
+
+    const undefinedEquality = await queryAdapter.query({
+      objectType: "conformance.pushdown",
+      where: [{ attribute: "nullable", operator: "eq", value: undefined }],
+    });
+    assert.deepEqual(undefinedEquality.map((item) => item.id), ["b", "d"]);
+
+    const nanEquality = await queryAdapter.query({
+      objectType: "conformance.pushdown",
+      where: [{ attribute: "score", operator: "eq", value: Number.NaN }],
+    });
+    assert.deepEqual(nanEquality.map((item) => item.id), ["d"]);
+
+    const residualComparison = await queryAdapter.query({
+      objectType: "conformance.pushdown",
+      where: [{ attribute: "score", operator: "gte", value: 15 }],
+      orderBy: [{ attribute: "score", direction: "asc" }],
+      limit: 2,
+    });
+    assert.deepEqual(residualComparison.map((item) => item.id), ["b", "c"]);
+
+    const residualString = await queryAdapter.query({
+      objectType: "conformance.pushdown",
+      where: [{ attribute: "state", operator: "contains", value: "pen" }],
+    });
+    assert.deepEqual(residualString.map((item) => item.id), ["a", "c"]);
+
     const raceAdapter = await createAdapter();
     const raceBase = await raceAdapter.insert(snapshot("update-race"));
     const raceResults = await Promise.allSettled([
