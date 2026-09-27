@@ -282,6 +282,15 @@ export class RuntimeFleetConvergenceRunner {
     }
 
     const target = await this.requireTarget(claimed.runtimeId);
+    if (target.revision !== claimed.targetRevision) {
+      const failed = await this.convergence.fail(
+        claimed.workId,
+        `Runtime target changed immediately after work claim: expected revision ${claimed.targetRevision}, found ${target.revision}.`,
+        claimed.revision,
+      );
+      return { work: failed, blockedReason: "stale-target" };
+    }
+
     const history = await this.executions.list(claimed.workId);
     const attempt = history.length + 1;
     const idempotencyKey = this.idempotencyKeys(claimed);
@@ -330,10 +339,15 @@ export class RuntimeFleetConvergenceRunner {
       return { work, execution, blockedReason: "executor-mismatch" };
     }
 
-    const target = await this.requireTarget(work.runtimeId);
+    let target: RuntimeTargetRecord;
+    try {
+      target = await this.requireTarget(work.runtimeId);
+    } catch (error) {
+      await this.failWorkOnly(work, errorMessage(error));
+      return { work: await this.requireWork(work.workId), execution, blockedReason: "stale-target" };
+    }
     if (!sameProfile(target.desiredProfile, execution.desiredProfile)) {
-      await this.failClosed(work, execution, "Runtime desired profile changed during convergence execution.");
-      return { work: await this.requireWork(work.workId), execution: await this.requireExecution(execution.executionId), blockedReason: "stale-target" };
+      return this.failClosed(work, execution, "Runtime desired profile changed during convergence execution.");
     }
 
     if (execution.status === "completed") {
@@ -515,12 +529,6 @@ export class RuntimeFleetConvergenceRunner {
     if (target.status !== "active") throw new MetadataError(`Runtime target '${runtimeId}' is retired.`);
     return target;
   }
-
-  private async requireExecution(executionId: string): Promise<RuntimeFleetConvergenceExecutionRecord> {
-    const execution = await this.executions.get(executionId);
-    if (!execution) throw new MetadataError(`Unknown runtime fleet convergence execution '${executionId}'.`);
-    return execution;
-  }
 }
 
 function sameProfile(left: RuntimeTargetDesiredProfile, right: RuntimeTargetDesiredProfile): boolean {
@@ -587,8 +595,8 @@ export function validateRuntimeFleetConvergenceExecutionRecord(record: RuntimeFl
   if (!record.finishedAt?.trim()) {
     throw new MetadataError(`Terminal runtime fleet convergence execution '${record.status}' requires finishedAt.`);
   }
-  assertPositiveRevision(record.targetRevisionAfter!, "targetRevisionAfter");
   if (record.status === "completed") {
+    assertPositiveRevision(record.targetRevisionAfter!, "targetRevisionAfter");
     if (!record.summary?.trim()) throw new MetadataError("Completed runtime fleet convergence execution requires summary.");
     if (record.error !== undefined || record.uncertain !== undefined) {
       throw new MetadataError("Completed runtime fleet convergence execution cannot contain failure state.");
@@ -597,6 +605,11 @@ export function validateRuntimeFleetConvergenceExecutionRecord(record: RuntimeFl
     if (!record.error?.trim()) throw new MetadataError("Failed runtime fleet convergence execution requires error.");
     if (record.uncertain === undefined) throw new MetadataError("Failed runtime fleet convergence execution requires uncertain flag.");
     if (record.summary !== undefined) throw new MetadataError("Failed runtime fleet convergence execution cannot contain summary.");
+    if (record.targetRevisionAfter !== undefined) {
+      assertPositiveRevision(record.targetRevisionAfter, "targetRevisionAfter");
+    } else if (!record.uncertain) {
+      throw new MetadataError("Certain failed runtime fleet convergence execution requires targetRevisionAfter.");
+    }
   }
   if (record.evidence !== undefined) normalizeEvidence(record.evidence);
 }
