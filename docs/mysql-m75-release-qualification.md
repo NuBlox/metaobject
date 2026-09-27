@@ -33,6 +33,8 @@ The consumer proves:
 
 The temporary consumer is destroyed after each run.
 
+The adapter and `@nublox/mysql` are Node.js packages. `@nublox/mysql` exposes Node `Buffer` types in its public declarations but does not install `@types/node` as a runtime dependency. The strict TypeScript fixture therefore models a real Node TypeScript project by installing `typescript` and `@types/node`, while retaining `skipLibCheck: false`. This makes the Node environment explicit without suppressing declaration errors.
+
 Run it from `packages/storage-mysql`:
 
 ```bash
@@ -50,7 +52,7 @@ The adapter's `engines` field therefore remains `>=22` while the core package co
 
 ## MySQL version matrix
 
-The live persistence job now runs independently against:
+The live persistence job runs independently against:
 
 - MySQL 8.0;
 - MySQL 8.4.
@@ -75,6 +77,21 @@ That means every supported database lane covers:
 - high-contention object and metadata optimistic concurrency;
 - rollback after partial transactional progress;
 - migration stampede serialization.
+
+## Qualification evidence
+
+The first complete M75 GitHub Actions matrix passed on the same adapter revision after the Node TypeScript fixture was corrected to include Node declarations:
+
+- core check — Node.js 20: passed;
+- core check — Node.js 22: passed;
+- core check — Node.js 24: passed;
+- core package + clean consumer: passed;
+- packed adapter clean consumer — Node.js 22: passed;
+- packed adapter clean consumer — Node.js 24: passed;
+- MySQL 8.0 persistence + M74 certification: passed;
+- MySQL 8.4 persistence + M74 certification: passed.
+
+No modification to the core v1 public contract was required.
 
 ## Release commands
 
@@ -108,7 +125,7 @@ The package version is immutable after publication. If a defect is found after p
 
 ## Core-release implication
 
-M75 is intentionally designed to detect accidental reliance on unpublished core internals. The adapter's clean consumer uses the published MetaObject RC rather than a local source checkout. If the adapter passes M75 without requiring a change to the core public contract, that is positive evidence that `@nublox/metaobject@1.0.0-rc.1` remains externally consumable as designed.
+M75 is intentionally designed to detect accidental reliance on unpublished core internals. The adapter's clean consumer uses the published MetaObject RC rather than a local source checkout. Passing M75 without requiring a change to the core public contract is positive evidence that `@nublox/metaobject@1.0.0-rc.1` remains externally consumable as designed.
 
 A failure that can only be repaired by changing the v1 core public contract would require a new core release candidate. Adapter-only defects do not require a core RC increment.
 
