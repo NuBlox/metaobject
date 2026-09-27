@@ -6,6 +6,38 @@ The project follows Semantic Versioning once the v1 public API is released. Pre-
 
 ## Unreleased
 
+## 1.0.0-rc.1
+
+First v1 release candidate for the standalone `@nublox/metaobject` runtime.
+
+### Added
+
+- Stable public API generation 1 exposed through the package root.
+- Metadata-driven runtime objects, relationships, inheritance, composition, validation and behaviours.
+- Database-neutral object and metadata persistence contracts with reusable adapter conformance suites.
+- Query planning/execution, code generation, schema evolution and governed metadata release.
+- Versioned metadata modules, exact module-set lockfiles and reproducible runtime profiles.
+- Governed deployment execution, append-only evidence, attestations, drift/remediation and runtime posture.
+- Fleet reconciliation, convergence execution, fair dispatch, handoff recovery and immutable recovery evidence.
+- Deterministic integrity, external signature providers, signer/quorum trust policy, portable historical trust bundles and externally anchored trust roots.
+- External trust-root governance, recoverable rotation/supersession and deterministic authoritative-chain resolution.
+- Package-manifest verification, clean ESM/TypeScript consumer verification and Node.js 20/22/24 CI coverage.
+- Release-candidate adversarial/tamper matrix and fail-closed lifecycle replay hardening.
+
+### Changed
+
+- Package version advances from the milestone series to `1.0.0-rc.1`.
+- The package root is the supported v1 compatibility boundary; generated `dist/**` deep imports are not public contracts.
+
+### Fixed
+
+- External trust-root governance and rotation replay reject backward timestamp regression while preserving valid equal timestamps.
+
+### Distribution
+
+- The package remains `UNLICENSED`.
+- This release candidate may be tagged and validated from GitHub, but public npm publication remains intentionally disabled until NuBlox explicitly chooses a distribution/licence posture.
+
 ## 0.67.0
 
 ### Added
