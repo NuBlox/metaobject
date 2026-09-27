@@ -52,13 +52,42 @@ jobs:
       - name: Verify clean consumer
         run: npm run verify:consumer
 
+  mysql-adapter-consumer:
+    name: MySQL adapter clean consumer (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: packages/storage-mysql
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install adapter build dependencies
+        run: npm install
+
+      - name: Verify packed adapter in a clean external consumer
+        run: npm run verify:consumer
+
   mysql-storage-adapter:
-    name: MySQL persistence
+    name: MySQL ${{ matrix.mysql }} persistence
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mysql: ["8.0", "8.4"]
     services:
       mysql:
-        image: mysql:8.4
+        image: "mysql:${{ matrix.mysql }}"
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: metaobject_test
