@@ -26,7 +26,7 @@
     "prepare": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "npm run build && node --test test/unit.test.mjs test/query-compiler.test.mjs",
-    "test:integration": "npm run build && node --test test/mysql-conformance.test.mjs",
+    "test:integration": "npm run build && node --test test/mysql-conformance.test.mjs test/mysql-migrations.test.mjs",
     "test": "npm run test:unit",
     "check": "npm run typecheck && npm run test:unit && npm run verify:package",
     "verify:package": "npm run build && node scripts/verify-package.mjs"
