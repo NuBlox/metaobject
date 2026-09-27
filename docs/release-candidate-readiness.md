@@ -4,7 +4,7 @@ This document defines the finite gate for the first `@nublox/metaobject` v1.0 re
 
 ## Current position
 
-The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, and the M49–M62 integrity/trust chain.
+The package has a substantial standalone kernel, strict TypeScript checking, compile-time type tests, a broad Node runtime test suite, database-neutral contracts, metadata/versioning/release machinery, runtime convergence controls, the M49–M62 integrity/trust chain, a stabilized M63 public API, and reusable M64 adapter-conformance verification.
 
 The first RC should be cut when the existing scope is hardened and documented. New product features are not RC blockers unless they close one of the gates below.
 
@@ -30,12 +30,15 @@ Implemented:
 - adds compile-time consumer-contract tests for root imports, metadata helpers, repository/storage contracts, reference storage and public errors;
 - documents v1 semantic compatibility rules and RC-period change discipline.
 
-### M64 — Storage/adapter conformance
+### M64 — Storage/adapter conformance ✅
 
-- publish a reusable conformance suite for `StorageAdapter` and persistence contracts;
-- verify memory implementations against the same contract;
-- define the compatibility boundary for external MySQL/PostgreSQL/SQLite adapter packages;
-- keep database drivers outside core.
+Implemented:
+
+- exports reusable `StorageAdapter` and `MetadataStore` conformance runners;
+- verifies the reference in-memory implementations against the same public contract external adapters must satisfy;
+- covers detached reads, optimistic concurrency, atomic batch rollback, request-order results, portable query semantics, filtering and deletion behavior;
+- documents the compatibility boundary for MySQL/PostgreSQL/SQLite and other external adapter packages;
+- keeps database drivers and dialect-specific dependencies outside core.
 
 ### M65 — Release engineering
 
@@ -48,7 +51,7 @@ Implemented:
 ### M66 — Documentation convergence
 
 - bring the README implemented-scope and roadmap sections up to the current milestone;
-- add architecture/index documentation for M14–M62;
+- add architecture/index documentation for M14–M64;
 - provide minimal end-to-end examples for metadata definition, persistence, modules, runtime control, and trust verification;
 - document stability/compatibility guarantees and extension points.
 
@@ -73,7 +76,7 @@ Implemented:
 
 - [x] trust-root supersession resolves to one unambiguous current authority;
 - [x] public API surface is reviewed and intentionally exported;
-- [ ] storage/persistence adapter contracts have a reusable conformance suite;
+- [x] storage/persistence adapter contracts have a reusable conformance suite;
 - [ ] package contents and clean-consumer imports are CI-verified;
 - [ ] supported Node versions are tested explicitly;
 - [ ] README and architecture documentation match implemented scope;
