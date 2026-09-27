@@ -16,8 +16,9 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `mysql-m74-certification.md` — M74 large-dataset equivalence, contention, rollback, pool-pressure and migration-stampede certification.
 - `mysql-m75-release-qualification.md` — M75 clean external-consumer, Node matrix and MySQL 8.0/8.4 release qualification.
 - `mysql-m76-publication-promotion.md` — M76 publication hardening, trusted-publishing preparation and stable-core promotion gate.
+- `m77-stable-v1-promotion.md` — M77 stable `1.0.0` version-only promotion and final qualification boundary.
 - `releasing.md` — supported Node versions, package verification and release procedure.
-- `release-candidate-readiness.md` — finite RC gate and stable-promotion position.
+- `release-candidate-readiness.md` — completed RC gate and stable-promotion position.
 
 ## Metadata model and runtime
 
@@ -77,6 +78,7 @@ The individual `runtime-fleet-convergence-handoff-recovery-trust-*` documents ar
 - `mysql-m74-certification.md` — repeatable MySQL adapter certification, stress evidence and performance regression guardrails.
 - `mysql-m75-release-qualification.md` — packed-package clean-consumer verification and supported MySQL-version qualification.
 - `mysql-m76-publication-promotion.md` — protected npm publication, OIDC workflow preparation and v1 promotion criteria.
+- `m77-stable-v1-promotion.md` — exact stable-v1 qualification, tag and publication sequence.
 - `releasing.md` — package verification and clean-consumer checks.
 - `../CHANGELOG.md` — release history and release-note convention.
 

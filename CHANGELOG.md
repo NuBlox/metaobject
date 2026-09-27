@@ -2,16 +2,33 @@
 
 All notable changes to `@nublox/metaobject` are recorded here.
 
-The project follows Semantic Versioning once the v1 public API is released. Pre-1.0 milestone versions may still contain compatibility changes, but the RC line is treated as a stabilization period and breaking changes require explicit documentation.
+The project follows Semantic Versioning once the v1 public API is released. The release-candidate line was treated as a stabilization period and breaking changes required explicit documentation.
 
 ## Unreleased
 
+## 1.0.0
+
+First stable v1 release of the standalone `@nublox/metaobject` runtime.
+
 ### Changed
 
-- Added canonical GitHub repository/homepage/issue metadata to the publishable core package.
-- Added a `prepublishOnly` release gate so `npm publish` cannot bypass package, test and clean-consumer qualification.
-- Added OIDC-ready GitHub Actions publication workflow scaffolding for trusted npm publishing and stable-v1 promotion.
-- No core runtime source, public declaration or v1 compatibility-contract change is introduced by M76.
+- Package version advances from `1.0.0-rc.1` to `1.0.0`.
+- Public API generation `1` becomes the stable SemVer compatibility boundary exposed through the package root.
+- Canonical GitHub repository, homepage and issue metadata are included in the package manifest.
+- `prepublishOnly` enforces the complete release gate before any npm publication attempt.
+- OIDC-ready GitHub Actions publication workflow scaffolding supports trusted npm publishing and semantic `next`/`latest` dist-tags.
+
+### Compatibility
+
+- No core runtime source or public declaration change is introduced between the published `1.0.0-rc.1` runtime contract and this stable promotion.
+- M69–M75 exercised the published RC contract through the independent MySQL adapter, including packed clean consumers and live MySQL 8.0/8.4 conformance/certification, without requiring a core contract correction.
+- Deep imports from generated `dist/**` paths remain outside the public compatibility contract.
+
+### Distribution
+
+- Licensed under the Apache License, Version 2.0 (`Apache-2.0`).
+- Copyright © 2026 Stephen J T Spittal.
+- Stable npm publication is a separate release action from this version/changelog promotion commit and must originate from the exact green `v1.0.0` tag.
 
 ## 1.0.0-rc.1
 

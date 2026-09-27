@@ -6,9 +6,11 @@ This document records the completed first-v1 release-candidate gate and the crit
 
 M62–M68 are complete and `@nublox/metaobject@1.0.0-rc.1` is tagged and published on npm under `next` with Apache-2.0 licensing and copyright held by Stephen J T Spittal.
 
-M69–M75 then exercised the published core contract through the independent MySQL storage adapter without requiring a core public-API or runtime correction. The adapter passed packed clean-consumer verification on Node.js 22/24 and full live persistence/certification on MySQL 8.0 and 8.4.
+M69–M75 exercised the published core contract through the independent MySQL storage adapter without requiring a core public-API or runtime correction. The adapter passed packed clean-consumer verification on Node.js 22/24 and full live persistence/certification on MySQL 8.0 and 8.4.
 
-At M76 start, comparing `v1.0.0-rc.1` with the M75 `main` commit showed no changes under core `src/`, `test/`, `type-tests/`, or the root `package.json`. Post-RC commits were confined to the database-specific adapter, CI and documentation. There is therefore no current technical evidence requiring `1.0.0-rc.2`.
+M76 hardened package publication metadata, `prepublishOnly` verification and OIDC-ready trusted-publishing workflows. Comparing `v1.0.0-rc.1` with the M75 boundary showed no changes under core `src/`, `test/` or `type-tests/`; M76 likewise introduced no core runtime or declaration change. There is therefore no technical evidence requiring `1.0.0-rc.2`.
+
+M77 now prepares the stable `1.0.0` version/changelog/README promotion while deliberately leaving runtime source and public declarations untouched. The release tag and npm publication remain separate irreversible actions after exact-commit qualification.
 
 ## Completed RC milestones
 
@@ -66,7 +68,7 @@ At M76 start, comparing `v1.0.0-rc.1` with the M75 `main` commit showed no chang
 
 ## Stable-v1 promotion gate
 
-`@nublox/metaobject@1.0.0` is eligible for promotion only when all of the following are true:
+`@nublox/metaobject@1.0.0` is eligible for publication only when all of the following are true:
 
 - [x] the v1 public API boundary remains generation `"1"`;
 - [x] no known fail-open trust, lifecycle, concurrency or persistence defect remains;
@@ -76,13 +78,15 @@ At M76 start, comparing `v1.0.0-rc.1` with the M75 `main` commit showed no chang
 - [x] MySQL 8.0/8.4 qualification demonstrates the persistence contracts are externally implementable;
 - [x] post-RC development has not altered core runtime source or public declarations;
 - [x] release publication is protected by pre-publish verification and canonical repository metadata;
-- [ ] the final `1.0.0` version/changelog-only promotion commit passes the complete release gate;
-- [ ] the exact `v1.0.0` tag is created from that green `main` commit;
-- [ ] npm registry verification confirms `@nublox/metaobject@1.0.0` and `latest: 1.0.0`.
+- [ ] the exact M77 `1.0.0` version/changelog/README promotion revision passes the complete branch and merged-`main` qualification matrix;
+- [ ] npm trusted publishing is configured for `@nublox/metaobject` against `publish-metaobject.yml`;
+- [ ] the exact `v1.0.0` tag is created from the verified green `main` commit;
+- [ ] the tag-triggered publication workflow succeeds;
+- [ ] npm registry verification confirms `@nublox/metaobject@1.0.0`, `Apache-2.0` and `latest: 1.0.0`.
 
 ## `rc.2` rule
 
-Create `1.0.0-rc.2` only if stable-promotion work exposes a defect that requires changing the core v1 runtime behavior, public declarations or supported compatibility contract.
+Create `1.0.0-rc.2` only if stable-promotion qualification exposes a defect that requires changing the core v1 runtime behavior, public declarations or supported compatibility contract.
 
 Do **not** create a core RC solely for database-adapter changes, MySQL-specific fixes, documentation changes, release automation or package metadata.
 
@@ -90,4 +94,4 @@ Do **not** create a core RC solely for database-adapter changes, MySQL-specific 
 
 Database-specific drivers/adapters, application-framework integration, NuBlox product UI and application-specific domain metadata remain outside the core stable-v1 scope when implemented as separate packages.
 
-See `mysql-m76-publication-promotion.md` for publication hardening and the operational promotion sequence.
+See `mysql-m76-publication-promotion.md` for publication hardening and `m77-stable-v1-promotion.md` for the exact stable-v1 qualification and release sequence.
