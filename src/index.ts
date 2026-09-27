@@ -35,6 +35,7 @@ export * from "./modules/runtime-posture.js";
 export * from "./modules/runtime-profile-catalog.js";
 export * from "./modules/runtime-profile-store.js";
 export * from "./modules/runtime-profile-upgrade.js";
+export * from "./modules/runtime-registry.js";
 export * from "./query/query.js";
 export * from "./query/query-engine.js";
 export * from "./query/query-planner.js";
