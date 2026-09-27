@@ -32,7 +32,7 @@ test("MySqlStorageAdapter satisfies StorageAdapter conformance", { skip: !config
   try {
     const report = await runStorageAdapterConformance({ createAdapter });
     assert.equal(report.contract, "StorageAdapter");
-    assert.equal(report.checks.length, 6);
+    assert.equal(report.checks.length, 7);
     assert.ok(report.checks.every((check) => check.passed));
 
     const codecAdapter = await createAdapter();
