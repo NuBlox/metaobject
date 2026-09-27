@@ -12,6 +12,25 @@ import { validateRuntimeFleetHandoffRecoveryResolutionRecord } from "./runtime-f
 
 export type RuntimeFleetHandoffResolutionExecutionStatus = "running" | "completed" | "failed" | "uncertain";
 
+export interface RuntimeFleetHandoffResolutionExecutionWorkIdentity {
+  readonly workId: string;
+  readonly runtimeId: string;
+  readonly action: RuntimeFleetFairReservationRecord["work"][number]["action"];
+  readonly workRevision: number;
+  readonly fairnessRank: number;
+}
+
+/**
+ * Full immutable M42 identity captured when an M46 execution starts. Optional
+ * only so persisted v0.46 receipts remain readable after the v0.47 hardening.
+ */
+export interface RuntimeFleetHandoffResolutionExecutionIdentity {
+  readonly dispatchId: string;
+  readonly workerId: string;
+  readonly handoffAt: string;
+  readonly work: readonly RuntimeFleetHandoffResolutionExecutionWorkIdentity[];
+}
+
 export interface RuntimeFleetHandoffResolutionExecutionRecord {
   readonly format: "nublox-metaobject-runtime-fleet-handoff-resolution-execution";
   readonly formatVersion: 1;
@@ -25,6 +44,7 @@ export interface RuntimeFleetHandoffResolutionExecutionRecord {
   readonly actorId: string;
   readonly startReservationRevision: number;
   readonly admissionId: string;
+  readonly handoffIdentity?: RuntimeFleetHandoffResolutionExecutionIdentity;
   readonly startAdmissionStatus?: RuntimeFleetFairDispatchRecord["status"];
   readonly startAdmissionRevision?: number;
   readonly startedAt: string;
@@ -121,6 +141,9 @@ export class MemoryRuntimeFleetHandoffResolutionExecutionStore implements Runtim
         throw new MetadataError(`Runtime fleet handoff resolution execution '${record.executionId}' ${label} is immutable.`);
       }
     }
+    if (JSON.stringify(current.handoffIdentity) !== JSON.stringify(record.handoffIdentity)) {
+      throw new MetadataError(`Runtime fleet handoff resolution execution '${record.executionId}' handoffIdentity is immutable.`);
+    }
     const stored = clone({ ...record, revision: current.revision + 1 });
     this.#records.set(stored.executionId, stored);
     return clone(stored);
@@ -183,6 +206,7 @@ export class RuntimeFleetHandoffResolutionExecutionCatalog {
       actorId: resolution.actorId,
       startReservationRevision: reservation.revision,
       admissionId: resolution.admissionId,
+      handoffIdentity: captureHandoffIdentity(reservation),
       ...(admission === null ? {} : {
         startAdmissionStatus: admission.status,
         startAdmissionRevision: admission.revision,
@@ -236,6 +260,7 @@ export class RuntimeFleetHandoffResolutionExecutionCatalog {
   ): Promise<RuntimeFleetHandoffResolutionExecutionRecord> {
     try {
       const result = await this.resolutions.execute(resolution.resolutionId);
+      assertTerminalReservationIdentity(execution, result.reservation);
       const admission = await this.admissions.get(execution.admissionId);
       if (admission) validateRuntimeFleetFairDispatchRecord(admission);
       return this.executions.save({
@@ -257,7 +282,11 @@ export class RuntimeFleetHandoffResolutionExecutionCatalog {
       const message = errorMessage(error);
 
       if (isExpectedTerminalReservation(execution.action, reservation)) {
-        return this.completeFromObservedState(execution, reservation, admission);
+        try {
+          return await this.completeFromObservedState(execution, reservation, admission);
+        } catch (identityError) {
+          return this.finishUncertain(execution, reservation, admission, errorMessage(identityError));
+        }
       }
       if (matchesStartingSnapshot(execution, resolution, reservation, admission)) {
         return this.executions.save({
@@ -333,6 +362,26 @@ export class RuntimeFleetHandoffResolutionExecutionCatalog {
   }
 }
 
+function captureHandoffIdentity(
+  reservation: RuntimeFleetFairReservationRecord,
+): RuntimeFleetHandoffResolutionExecutionIdentity {
+  if (!reservation.handoffAt) {
+    throw new MetadataError(`Runtime fleet fair reservation '${reservation.reservationId}' has no handoffAt identity.`);
+  }
+  return {
+    dispatchId: reservation.dispatchId,
+    workerId: reservation.workerId,
+    handoffAt: reservation.handoffAt,
+    work: reservation.work.map((item) => ({
+      workId: item.workId,
+      runtimeId: item.runtimeId,
+      action: item.action,
+      workRevision: item.workRevision,
+      fairnessRank: item.fairnessRank,
+    })),
+  };
+}
+
 function assertExecutionMatchesResolution(
   execution: RuntimeFleetHandoffResolutionExecutionRecord,
   resolution: RuntimeFleetHandoffRecoveryResolutionRecord,
@@ -346,6 +395,13 @@ function assertExecutionMatchesResolution(
     || execution.admissionId !== resolution.admissionId
   ) {
     throw new MetadataError(`M46 execution '${execution.executionId}' does not match its immutable M45 resolution.`);
+  }
+  if (execution.handoffIdentity !== undefined && (
+    execution.handoffIdentity.dispatchId !== resolution.dispatchId
+    || execution.handoffIdentity.workerId !== resolution.workerId
+    || execution.handoffIdentity.handoffAt !== resolution.handoffAt
+  )) {
+    throw new MetadataError(`M46 execution '${execution.executionId}' handoff identity does not match its M45 resolution.`);
   }
 }
 
@@ -363,6 +419,20 @@ function assertResolutionReservationSnapshot(
     || reservation.handoffAt !== resolution.handoffAt
   ) {
     throw new ConcurrencyError(`Runtime fleet fair reservation '${reservation.reservationId}' changed ${stage}.`);
+  }
+}
+
+function assertExecutionHandoffIdentity(
+  execution: RuntimeFleetHandoffResolutionExecutionRecord,
+  reservation: RuntimeFleetFairReservationRecord,
+): void {
+  const identity = execution.handoffIdentity;
+  if (identity === undefined) return;
+  const current = captureHandoffIdentity(reservation);
+  if (JSON.stringify(identity) !== JSON.stringify(current)) {
+    throw new ConcurrencyError(
+      `Runtime fleet fair reservation '${reservation.reservationId}' immutable handoff identity changed after M46 execution started.`,
+    );
   }
 }
 
@@ -392,6 +462,7 @@ function matchesStartingSnapshot(
 ): boolean {
   try {
     assertResolutionReservationSnapshot(resolution, reservation, "after M46 started");
+    assertExecutionHandoffIdentity(execution, reservation);
     if (reservation.revision !== execution.startReservationRevision) return false;
     if (execution.startAdmissionStatus === undefined) return admission === null;
     return admission !== null
@@ -419,6 +490,7 @@ function assertTerminalReservationIdentity(
   ) {
     throw new MetadataError(`Observed terminal reservation does not belong to M46 execution '${execution.executionId}'.`);
   }
+  assertExecutionHandoffIdentity(execution, reservation);
   if (reservation.revision <= execution.startReservationRevision) {
     throw new ConcurrencyError(`Terminal reservation '${reservation.reservationId}' did not advance beyond the M46 start revision.`);
   }
@@ -443,6 +515,7 @@ export function validateRuntimeFleetHandoffResolutionExecutionRecord(
     throw new MetadataError("Runtime fleet handoff resolution execution revision must be a non-negative integer.");
   }
   assertPositiveInteger(record.startReservationRevision, "startReservationRevision");
+  if (record.handoffIdentity !== undefined) validateHandoffIdentity(record.handoffIdentity);
   if ((record.startAdmissionStatus === undefined) !== (record.startAdmissionRevision === undefined)) {
     throw new MetadataError("M46 startAdmissionStatus and startAdmissionRevision must be supplied together.");
   }
@@ -481,6 +554,33 @@ export function validateRuntimeFleetHandoffResolutionExecutionRecord(
     }
   } else if (!record.error?.trim() || record.outcome !== undefined) {
     throw new MetadataError("Failed/uncertain M46 execution requires error and cannot contain outcome.");
+  }
+}
+
+function validateHandoffIdentity(identity: RuntimeFleetHandoffResolutionExecutionIdentity): void {
+  assertText(identity.dispatchId, "handoffIdentity.dispatchId");
+  assertText(identity.workerId, "handoffIdentity.workerId");
+  if (!Number.isFinite(Date.parse(identity.handoffAt))) {
+    throw new MetadataError("M46 handoffIdentity.handoffAt must be a valid timestamp.");
+  }
+  if (identity.work.length === 0) {
+    throw new MetadataError("M46 handoffIdentity requires at least one work item.");
+  }
+  const ids = new Set<string>();
+  let previousRank = 0;
+  for (const item of identity.work) {
+    assertText(item.workId, "handoffIdentity.workId");
+    assertText(item.runtimeId, "handoffIdentity.runtimeId");
+    assertPositiveInteger(item.workRevision, "handoffIdentity.workRevision");
+    assertPositiveInteger(item.fairnessRank, "handoffIdentity.fairnessRank");
+    if (item.fairnessRank <= previousRank) {
+      throw new MetadataError("M46 handoffIdentity work must preserve ascending fairness rank.");
+    }
+    if (ids.has(item.workId)) {
+      throw new MetadataError(`M46 handoffIdentity contains duplicate work '${item.workId}'.`);
+    }
+    previousRank = item.fairnessRank;
+    ids.add(item.workId);
   }
 }
 
