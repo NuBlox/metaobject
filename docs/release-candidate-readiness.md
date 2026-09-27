@@ -19,13 +19,16 @@ Implemented:
 - rejects forks, merges, cycles, incomplete rotations, missing exact governance links, digest mismatches, multiple active roots and disconnected completed rotation islands;
 - returns the complete oldest-to-current authority lineage without rewriting historical evidence.
 
-### M63 — Public API stabilization
+### M63 — Public API stabilization ✅
 
-- inventory every root export;
-- identify accidental/internal exports;
-- normalize naming and error semantics;
-- define compatibility expectations for the v1 public surface;
-- add API-focused type tests for supported consumer usage.
+Implemented:
+
+- establishes the package root as the supported v1 compatibility boundary;
+- documents the supported API categories and deep-import policy;
+- defines the public error hierarchy and message-stability expectations;
+- adds `METAOBJECT_PUBLIC_API_VERSION` as an explicit compatibility-generation marker;
+- adds compile-time consumer-contract tests for root imports, metadata helpers, repository/storage contracts, reference storage and public errors;
+- documents v1 semantic compatibility rules and RC-period change discipline.
 
 ### M64 — Storage/adapter conformance
 
@@ -69,7 +72,7 @@ Implemented:
 `v1.0.0-rc.1` is ready only when all of the following are true:
 
 - [x] trust-root supersession resolves to one unambiguous current authority;
-- [ ] public API surface is reviewed and intentionally exported;
+- [x] public API surface is reviewed and intentionally exported;
 - [ ] storage/persistence adapter contracts have a reusable conformance suite;
 - [ ] package contents and clean-consumer imports are CI-verified;
 - [ ] supported Node versions are tested explicitly;

@@ -1,3 +1,4 @@
+export * from "./public-api-version.js";
 export * from "./codegen/artifact-generator.js";
 export * from "./codegen/json-schema-generator.js";
 export * from "./codegen/typescript-generator.js";
