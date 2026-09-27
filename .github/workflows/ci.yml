@@ -55,6 +55,7 @@ jobs:
   mysql-storage-adapter:
     name: MySQL persistence
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       mysql:
         image: mysql:8.4
@@ -94,3 +95,16 @@ jobs:
 
       - name: Run MetaObject persistence conformance against MySQL
         run: npm run test:integration
+
+      - name: Run M74 certification stress gate
+        env:
+          M74_DATASET_SIZE: 1200
+          M74_PARALLEL_READS: 400
+          M74_CONTENTION_WRITERS: 32
+          M74_MIGRATION_INITIALIZERS: 16
+          M74_MAX_SEED_MS: 30000
+          M74_MAX_QUERY_MATRIX_MS: 15000
+          M74_MAX_PARALLEL_READ_MS: 15000
+          M74_MAX_CONTENTION_MS: 20000
+          M74_MAX_MIGRATION_STAMPEDE_MS: 20000
+        run: npm run test:certification
