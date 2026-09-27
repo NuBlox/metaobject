@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createPool } from "@nublox/mysql/promise";
-import { runStorageAdapterConformance } from "@nublox/metaobject";
-import { MySqlStorageAdapter } from "../dist/index.js";
+import {
+  normalizeObjectType,
+  runMetadataStoreConformance,
+  runStorageAdapterConformance,
+} from "@nublox/metaobject";
+import { MySqlMetadataStore, MySqlStorageAdapter } from "../dist/index.js";
 
 const configured = Boolean(process.env.MYSQL_HOST);
 
@@ -17,7 +21,25 @@ function snapshot(id, value = 1) {
   };
 }
 
-test("MySqlStorageAdapter satisfies StorageAdapter conformance and M70 hardening", { skip: !configured }, async () => {
+function metadataRecord(id, version = 1, status = "draft") {
+  const timestamp = "2026-09-27T20:00:00.000Z";
+  return {
+    objectTypeId: id,
+    objectTypeVersion: version,
+    status,
+    revision: 0,
+    snapshot: normalizeObjectType({
+      id,
+      name: id,
+      version,
+      attributes: { value: { type: "string" } },
+    }),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+test("MySQL persistence satisfies MetaObject conformance and hardening", { skip: !configured }, async () => {
   const pool = createPool({
     host: process.env.MYSQL_HOST,
     port: Number(process.env.MYSQL_PORT ?? 3306),
@@ -33,18 +55,31 @@ test("MySqlStorageAdapter satisfies StorageAdapter conformance and M70 hardening
   let sequence = 0;
 
   const createAdapter = async () => {
-    const tableName = `metaobject_conformance_${process.pid}_${sequence++}`;
+    const tableName = `metaobject_object_${process.pid}_${sequence++}`;
     tables.push(tableName);
     const adapter = new MySqlStorageAdapter(pool, { tableName });
     await adapter.initialize();
     return adapter;
   };
 
+  const createStore = async () => {
+    const tableName = `metaobject_metadata_${process.pid}_${sequence++}`;
+    tables.push(tableName);
+    const store = new MySqlMetadataStore(pool, { tableName });
+    await store.initialize();
+    return store;
+  };
+
   try {
-    const report = await runStorageAdapterConformance({ createAdapter });
-    assert.equal(report.contract, "StorageAdapter");
-    assert.equal(report.checks.length, 7);
-    assert.ok(report.checks.every((check) => check.passed));
+    const storageReport = await runStorageAdapterConformance({ createAdapter });
+    assert.equal(storageReport.contract, "StorageAdapter");
+    assert.equal(storageReport.checks.length, 7);
+    assert.ok(storageReport.checks.every((check) => check.passed));
+
+    const metadataReport = await runMetadataStoreConformance({ createStore });
+    assert.equal(metadataReport.contract, "MetadataStore");
+    assert.equal(metadataReport.checks.length, 6);
+    assert.ok(metadataReport.checks.every((check) => check.passed));
 
     const codecAdapter = await createAdapter();
     const persisted = await codecAdapter.insert({
@@ -131,6 +166,62 @@ test("MySqlStorageAdapter satisfies StorageAdapter conformance and M70 hardening
     await assert.rejects(
       () => tamperAdapter.get({ type: "conformance.tamper", id: "bad-date" }),
       /Invalid MySQL snapshot encoding/,
+    );
+
+    const metadataRaceStore = await createStore();
+    const metadataBase = await metadataRaceStore.save(metadataRecord("meta.race"));
+    const metadataRace = await Promise.allSettled([
+      metadataRaceStore.save(
+        { ...metadataBase, status: "published", updatedAt: "2026-09-27T20:01:00.000Z" },
+        metadataBase.revision,
+      ),
+      metadataRaceStore.save(
+        { ...metadataBase, status: "deprecated", updatedAt: "2026-09-27T20:02:00.000Z" },
+        metadataBase.revision,
+      ),
+    ]);
+    assert.equal(metadataRace.filter((result) => result.status === "fulfilled").length, 1);
+    const metadataRaceLoser = metadataRace.find((result) => result.status === "rejected");
+    assert.ok(metadataRaceLoser);
+    assert.equal(metadataRaceLoser.reason?.name, "ConcurrencyError");
+    const metadataCurrent = await metadataRaceStore.get("meta.race", 1);
+    assert.ok(metadataCurrent);
+    assert.equal(metadataCurrent.revision, 2);
+    assert.ok(metadataCurrent.status === "published" || metadataCurrent.status === "deprecated");
+
+    const metadataDeleteBase = await metadataRaceStore.save(metadataRecord("meta.delete-race"));
+    const [metadataUpdateOutcome, metadataDeleteOutcome] = await Promise.allSettled([
+      metadataRaceStore.save(
+        { ...metadataDeleteBase, status: "published", updatedAt: "2026-09-27T20:03:00.000Z" },
+        metadataDeleteBase.revision,
+      ),
+      metadataRaceStore.delete(
+        metadataDeleteBase.objectTypeId,
+        metadataDeleteBase.objectTypeVersion,
+        metadataDeleteBase.revision,
+      ),
+    ]);
+    assert.equal(
+      [metadataUpdateOutcome, metadataDeleteOutcome].filter((result) => result.status === "fulfilled").length,
+      1,
+      "metadata update/delete race must have exactly one winner",
+    );
+    const metadataDeleteLoser = [metadataUpdateOutcome, metadataDeleteOutcome].find(
+      (result) => result.status === "rejected",
+    );
+    assert.ok(metadataDeleteLoser);
+    assert.equal(metadataDeleteLoser.reason?.name, "ConcurrencyError");
+
+    const tamperStore = await createStore();
+    const tamperRecord = await tamperStore.save(metadataRecord("meta.tamper"));
+    await pool.execute(
+      `UPDATE \`${tamperStore.tableName}\` SET snapshot_json = ?
+       WHERE object_type_id = ? AND object_type_version = ?`,
+      [validEmptyEnvelope, tamperRecord.objectTypeId, tamperRecord.objectTypeVersion],
+    );
+    await assert.rejects(
+      () => tamperStore.get(tamperRecord.objectTypeId, tamperRecord.objectTypeVersion),
+      /snapshot objectType must be an object record/,
     );
   } finally {
     for (const tableName of tables) {

@@ -158,7 +158,7 @@ See [`docs/architecture.md`](docs/architecture.md) and [`docs/index.md`](docs/in
 
 ## Storage adapters
 
-Core contains the `StorageAdapter` contract and `MemoryStorageAdapter` reference implementation. Database-specific adapters remain separate packages in the same repository unless there is a concrete reason to split them.
+Core contains the `StorageAdapter`/`MetadataStore` contracts plus in-memory reference implementations. Database-specific adapters remain separate packages in the same repository unless there is a concrete reason to split them.
 
 The MySQL adapter package lives at [`packages/storage-mysql`](packages/storage-mysql):
 
@@ -166,7 +166,7 @@ The MySQL adapter package lives at [`packages/storage-mysql`](packages/storage-m
 @nublox/metaobject-storage-mysql
 ```
 
-M69 established the MySQL foundation. M70 hardens its production persistence boundary with bounded/fail-closed codec handling, identity/schema/version validation, transient transaction retries, and live concurrent-write race tests. The package depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free.
+M69 established runtime-object persistence, M70 hardened the production persistence/concurrency boundary, and M71 adds a transactional MySQL `MetadataStore` with optimistic metadata revisions, deterministic filtering/listing, atomic metadata batches and live race/tamper coverage. The package depends on the published MetaObject RC and `@nublox/mysql`, while the core package remains MySQL-free.
 
 Planned siblings remain:
 
@@ -182,7 +182,7 @@ runStorageAdapterConformance(...)
 runMetadataStoreConformance(...)
 ```
 
-See [`docs/storage-adapter-conformance.md`](docs/storage-adapter-conformance.md).
+See [`docs/storage-adapter-conformance.md`](docs/storage-adapter-conformance.md), [`docs/mysql-storage-m70-hardening.md`](docs/mysql-storage-m70-hardening.md) and [`docs/mysql-metadata-store.md`](docs/mysql-metadata-store.md).
 
 ## Public API compatibility
 
@@ -213,7 +213,7 @@ npm run release:check
 
 `release:check` runs the full test gate, validates npm package contents, builds a real tarball, installs it into a clean consumer and verifies both ESM runtime imports and TypeScript declarations.
 
-CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The MySQL adapter has an additional Node.js 22 + MySQL 8.4 job covering public conformance plus M70 race/tamper hardening.
+CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The MySQL package has an additional Node.js 22 + MySQL 8.4 job covering both public persistence conformance suites plus M70/M71 race and tamper hardening.
 
 ## RC roadmap
 
@@ -226,6 +226,7 @@ CI executes the complete typecheck/build/test gate on Node.js 20, 22 and 24. The
 - **M68 — `v1.0.0-rc.1`** ✅ published
 - **M69 — MySQL storage-adapter foundation** ✅
 - **M70 — Production persistence/concurrency hardening** ✅
+- **M71 — MySQL MetadataStore persistence and transactional metadata revisions** ✅
 
 The finite RC gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md).
 

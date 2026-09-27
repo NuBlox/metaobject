@@ -10,6 +10,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `public-api.md` — v1 public API compatibility boundary and stability rules.
 - `storage-adapter-conformance.md` — executable persistence compatibility contract.
 - `mysql-storage-m70-hardening.md` — MySQL persistence-boundary, codec and optimistic-concurrency hardening.
+- `mysql-metadata-store.md` — M71 MySQL `MetadataStore`, transactional revisions and race/tamper handling.
 - `releasing.md` — supported Node versions, package verification and release procedure.
 - `release-candidate-readiness.md` — finite RC gate and remaining work.
 
@@ -20,6 +21,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `constraints-behaviors.md`
 - `query-engine.md`
 - `metadata-persistence.md`
+- `mysql-metadata-store.md`
 - `code-generation.md`
 - `schema-evolution.md`
 - `metadata-release-pipeline.md`
@@ -59,7 +61,8 @@ The individual `runtime-fleet-convergence-handoff-recovery-trust-*` documents ar
 
 - `public-api.md` — compatibility generation and root-export policy.
 - `storage-adapter-conformance.md` — adapter compatibility suite.
-- `mysql-storage-m70-hardening.md` — production MySQL adapter hardening evidence.
+- `mysql-storage-m70-hardening.md` — production MySQL object-storage hardening evidence.
+- `mysql-metadata-store.md` — production MySQL metadata persistence evidence.
 - `releasing.md` — package verification and clean-consumer checks.
 - `../CHANGELOG.md` — release history and release-note convention.
 

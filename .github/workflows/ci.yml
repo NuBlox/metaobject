@@ -53,7 +53,7 @@ jobs:
         run: npm run verify:consumer
 
   mysql-storage-adapter:
-    name: MySQL storage adapter
+    name: MySQL persistence
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -92,5 +92,5 @@ jobs:
       - name: Typecheck, unit test and verify package
         run: npm run check
 
-      - name: Run MetaObject storage conformance against MySQL
+      - name: Run MetaObject persistence conformance against MySQL
         run: npm run test:integration
