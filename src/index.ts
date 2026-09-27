@@ -50,6 +50,7 @@ export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust-policy
 export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust-policy-lifecycle-bundle.js";
 export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust-policy-lifecycle-bundle-anchor.js";
 export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust-policy-lifecycle-bundle-anchor-root-snapshot.js";
+export * from "./modules/runtime-fleet-convergence-handoff-recovery-trust-policy-lifecycle-bundle-anchor-root-snapshot-governance.js";
 export {
   MemoryRuntimeFleetConvergenceFairnessStore,
   RuntimeFleetConvergenceFairnessCatalog,
