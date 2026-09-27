@@ -301,15 +301,16 @@ export class RuntimePostureCatalog {
   async latest(runtimeId: string): Promise<RuntimePostureSnapshot | null> {
     if (!runtimeId.trim()) throw new MetadataError("Runtime posture runtimeId is required.");
     const history = await this.snapshots.list({ runtimeId });
-    return history.reduce<RuntimePostureSnapshot | null>(
-      (latest, snapshot) => latest === null || compareSnapshots(snapshot, latest) > 0 ? snapshot : latest,
+    const latest = history.reduce<RuntimePostureSnapshot | null>(
+      (current, snapshot) => current === null || compareSnapshots(snapshot, current) > 0 ? snapshot : current,
       null,
     );
+    return latest === null ? null : clone(latest);
   }
 
   async history(runtimeId: string): Promise<readonly RuntimePostureSnapshot[]> {
     if (!runtimeId.trim()) throw new MetadataError("Runtime posture runtimeId is required.");
-    return [...await this.snapshots.list({ runtimeId })].sort(compareSnapshots);
+    return [...await this.snapshots.list({ runtimeId })].sort(compareSnapshots).map(clone);
   }
 }
 
