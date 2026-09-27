@@ -6,9 +6,12 @@ import {
   MetaObjectError,
   MetaObjectRepository,
   MetadataError,
+  ObjectFactory,
   ObjectTypeNotFoundError,
   ObjectTypeRegistry,
   ValidationError,
+  Validator,
+  createDefaultTypeRegistry,
   defineDerivedObjectType,
   defineObjectType,
   type MetaObjectPublicApiVersion,
@@ -36,9 +39,15 @@ const derived = defineDerivedObjectType(base, {
 });
 
 const definition: ObjectTypeDefinition = derived;
-const registry: ObjectTypeRegistry = new ObjectTypeRegistry();
+const types = createDefaultTypeRegistry();
+const registry: ObjectTypeRegistry = new ObjectTypeRegistry(types);
+registry.register(base);
+registry.register(derived);
+registry.validateRelationships();
+
+const factory = new ObjectFactory(registry, types, () => "public-api-object");
 const storage: StorageAdapter = new MemoryStorageAdapter();
-const repository: MetaObjectRepository = new MetaObjectRepository(registry, storage);
+const repository: MetaObjectRepository = new MetaObjectRepository(storage, factory, new Validator());
 
 const apiVersion: MetaObjectPublicApiVersion = METAOBJECT_PUBLIC_API_VERSION;
 const errors: MetaObjectError[] = [
