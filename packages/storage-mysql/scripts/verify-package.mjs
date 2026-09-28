@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const expectedRepository = "git+https://github.com/NuBlox/metaobject.git";
 const expectedMetaObjectVersion = "1.0.0";
+const isPrerelease = String(packageJson.version).includes("-");
+const expectedDistTag = isPrerelease ? "next" : "latest";
 
 if (packageJson.name !== "@nublox/metaobject-storage-mysql") throw new Error("Unexpected package name.");
 if (packageJson.license !== "Apache-2.0") throw new Error("Package licence must remain Apache-2.0.");
@@ -14,8 +16,8 @@ if (packageJson.repository?.url !== expectedRepository) {
 if (packageJson.repository?.directory !== "packages/storage-mysql") {
   throw new Error("MySQL adapter repository.directory must remain packages/storage-mysql.");
 }
-if (packageJson.publishConfig?.access !== "public" || packageJson.publishConfig?.tag !== "next") {
-  throw new Error("MySQL adapter publishConfig must enforce public access under the next dist-tag.");
+if (packageJson.publishConfig?.access !== "public" || packageJson.publishConfig?.tag !== expectedDistTag) {
+  throw new Error(`MySQL adapter publishConfig must enforce public access under the ${expectedDistTag} dist-tag.`);
 }
 if (packageJson.scripts?.prepublishOnly !== "npm run release:check") {
   throw new Error("prepublishOnly must enforce the complete release gate.");
