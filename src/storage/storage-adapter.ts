@@ -1,5 +1,6 @@
 import type { ObjectIdentity, ObjectSnapshot } from "../runtime/model.js";
 import type { ObjectQuery } from "../query/query.js";
+import type { QueryPushdownCapabilities } from "../query/query-capabilities.js";
 
 export type StorageBatchWrite =
   | {
@@ -13,6 +14,12 @@ export type StorageBatchWrite =
     };
 
 export interface StorageAdapter {
+  /**
+   * Optional declaration of database-native query work whose semantics the
+   * adapter can prove equivalent to the public StorageAdapter contract.
+   * Absence means consumers must assume no pushdown capability.
+   */
+  readonly queryPushdownCapabilities?: QueryPushdownCapabilities;
   insert(snapshot: ObjectSnapshot): Promise<ObjectSnapshot>;
   update(snapshot: ObjectSnapshot, expectedVersion: number): Promise<ObjectSnapshot>;
   /**
