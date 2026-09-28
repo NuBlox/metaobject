@@ -8,7 +8,7 @@ It deliberately contains no NuBlox product UI, tenant/business-domain model or d
 
 ## Current status
 
-**`v1.0.0` is the stable v1 release version prepared and fully qualified in this repository.** The currently published npm release remains `v1.0.0-rc.1` under the `next` dist-tag until npm trusted publishing is configured and the exact green `v1.0.0` tag completes the stable publication workflow.
+**`v1.0.0` is the stable v1 release and is published on npm under the `latest` dist-tag.** The annotated `v1.0.0` tag resolves to commit `41a5f78c670ef9845fd19c12c8d9610d3da344c5`; the tag-triggered trusted-publishing workflow reran the full release gate and published `@nublox/metaobject@1.0.0` with GitHub Actions provenance.
 
 Public API generation: `METAOBJECT_PUBLIC_API_VERSION === "1"`.
 
@@ -166,7 +166,7 @@ The MySQL adapter package lives at [`packages/storage-mysql`](packages/storage-m
 @nublox/metaobject-storage-mysql
 ```
 
-M69 established runtime-object persistence, M70 hardened the production persistence/concurrency boundary, M71 added transactional MySQL metadata persistence, M72 added contract-preserving MySQL query translation, M73 added versioned physical-schema migrations, M74 added executable MySQL certification and stress hardening, and M75 added clean external-consumer plus MySQL-version release qualification. SQL-safe equality, membership and null predicates plus eligible pagination are pushed through NuBloxSQL server-side prepared statements; range/string predicates and attribute ordering remain deterministic JavaScript fallbacks where the current core comparison contract cannot yet be proven equivalent to MySQL collation semantics. Physical object/metadata schemas use an append-only checksummed migration ledger, serialized initialization, legacy-v1 adoption, crash-recoverable reconciliation and structural drift detection. M74 certifies those behaviours with large-dataset reference equivalence, pool pressure, high-contention optimistic concurrency, transactional rollback and migration-stampede workloads. M75 packs the adapter and consumes it from a separate temporary project on Node.js 22/24 while the live certification suite runs against both MySQL 8.0 and 8.4. The qualified adapter version `0.7.0` remains pinned to the published `@nublox/metaobject@1.0.0-rc.1` contract; a later adapter release can deliberately move that dependency to stable v1. The core package remains MySQL-free.
+M69 established runtime-object persistence, M70 hardened the production persistence/concurrency boundary, M71 added transactional MySQL metadata persistence, M72 added contract-preserving MySQL query translation, M73 added versioned physical-schema migrations, M74 added executable MySQL certification and stress hardening, and M75 added clean external-consumer plus MySQL-version release qualification. SQL-safe equality, membership and null predicates plus eligible pagination are pushed through NuBloxSQL server-side prepared statements; range/string predicates and attribute ordering remain deterministic JavaScript fallbacks where the current core comparison contract cannot yet be proven equivalent to MySQL collation semantics. Physical object/metadata schemas use an append-only checksummed migration ledger, serialized initialization, legacy-v1 adoption, crash-recoverable reconciliation and structural drift detection. M74 certifies those behaviours with large-dataset reference equivalence, pool pressure, high-contention optimistic concurrency, transactional rollback and migration-stampede workloads. M75 packs the adapter and consumes it from a separate temporary project on Node.js 22/24 while the live certification suite runs against both MySQL 8.0 and 8.4. The published adapter version `0.7.0` remains pinned to the published `@nublox/metaobject@1.0.0-rc.1` contract; a later adapter release can deliberately move that dependency to stable v1. The core package remains MySQL-free.
 
 Planned siblings remain:
 
@@ -234,9 +234,9 @@ CI executes the complete core typecheck/build/test gate on Node.js 20, 22 and 24
 - **M74 — MySQL adapter certification and production-stress hardening** ✅
 - **M75 — MySQL adapter external-consumer and release qualification** ✅
 - **M76 — Publication hardening and trusted-publishing preparation** ✅
-- **M77 — `v1.0.0` stable promotion engineering** ✅
+- **M77 — `v1.0.0` stable promotion and publication** ✅
 
-Stable registry release remains gated on npm trusted-publisher configuration, the exact `v1.0.0` tag and successful registry verification. The release gate is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md) and [`docs/m77-stable-v1-promotion.md`](docs/m77-stable-v1-promotion.md).
+Stable v1 is tagged as `v1.0.0` and published to npm as `@nublox/metaobject@1.0.0` under `latest` through the trusted GitHub Actions release workflow. Release evidence is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md) and [`docs/m77-stable-v1-promotion.md`](docs/m77-stable-v1-promotion.md).
 
 ## Documentation
 
