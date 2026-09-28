@@ -1,7 +1,11 @@
 import { MetadataError } from "@nublox/metaobject";
-import { quoteSqlIdentifier, validateSqlIdentifier } from "./schema.js";
+import {
+  MYSQL_IDENTITY_COLLATION,
+  quoteSqlIdentifier,
+  validateSqlIdentifier,
+} from "./schema.js";
 
-export const MYSQL_METADATA_SCHEMA_VERSION = 2;
+export const MYSQL_METADATA_SCHEMA_VERSION = 3;
 export const DEFAULT_MYSQL_METADATA_TABLE = "metaobject_metadata";
 export const MYSQL_METADATA_KEY_MAX_LENGTH = 255;
 export const MYSQL_METADATA_VERSION_MAX = 0xffff_ffff;
@@ -43,13 +47,22 @@ export function createMetadataV2MigrationSql(
     ADD KEY ${quoteSqlIdentifier(MYSQL_METADATA_V2_INDEX)} (object_type_id, status, object_type_version)`;
 }
 
+/** Immutable v2 -> v3 metadata migration: exact JavaScript-compatible object-type identity equality. */
+export function createMetadataV3MigrationSql(
+  tableName = DEFAULT_MYSQL_METADATA_TABLE,
+): string {
+  const table = quoteSqlIdentifier(validateMetadataTableName(tableName));
+  return `ALTER TABLE ${table}
+    MODIFY object_type_id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE ${MYSQL_IDENTITY_COLLATION} NOT NULL`;
+}
+
 /** Latest metadata-table DDL for diagnostics and provisioning outside the migrator. */
 export function createMetadataTableSql(
   tableName = DEFAULT_MYSQL_METADATA_TABLE,
 ): string {
   const table = quoteSqlIdentifier(validateMetadataTableName(tableName));
   return `CREATE TABLE IF NOT EXISTS ${table} (
-    object_type_id VARCHAR(255) NOT NULL,
+    object_type_id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE ${MYSQL_IDENTITY_COLLATION} NOT NULL,
     object_type_version INT UNSIGNED NOT NULL,
     status VARCHAR(16) NOT NULL,
     revision BIGINT UNSIGNED NOT NULL,
