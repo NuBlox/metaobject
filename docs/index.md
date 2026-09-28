@@ -19,6 +19,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `m77-stable-v1-promotion.md` — M77 stable `1.0.0` promotion, publication and release evidence.
 - `mysql-m78-stable-v1-alignment.md` — M78 alignment of the MySQL adapter with published stable `@nublox/metaobject@1.0.0`.
 - `mysql-m79-exact-identity.md` — M79 exact case/trailing-space identity semantics and physical-schema v3.
+- `mysql-m80-stable-v1-promotion.md` — M80 stable `@nublox/metaobject-storage-mysql@1.0.0` promotion and semantic npm channel gate.
 - `releasing.md` — supported Node versions, package verification and release procedure.
 - `release-candidate-readiness.md` — completed RC gate and stable-promotion evidence.
 
@@ -36,6 +37,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `mysql-m75-release-qualification.md`
 - `mysql-m78-stable-v1-alignment.md`
 - `mysql-m79-exact-identity.md`
+- `mysql-m80-stable-v1-promotion.md`
 - `code-generation.md`
 - `schema-evolution.md`
 - `metadata-release-pipeline.md`
@@ -85,6 +87,7 @@ The individual `runtime-fleet-convergence-handoff-recovery-trust-*` documents ar
 - `m77-stable-v1-promotion.md` — stable-v1 qualification, trusted publication and release closure.
 - `mysql-m78-stable-v1-alignment.md` — stable-core dependency alignment and adapter requalification/publication boundary.
 - `mysql-m79-exact-identity.md` — exact MySQL identity equality, v3 migration and regression evidence.
+- `mysql-m80-stable-v1-promotion.md` — stable adapter 1.0.0 promotion, semantic dist-tags and publication completion criteria.
 - `releasing.md` — package verification and clean-consumer checks.
 - `../CHANGELOG.md` — release history and release-note convention.
 
