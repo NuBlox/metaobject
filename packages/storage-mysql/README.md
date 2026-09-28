@@ -4,7 +4,7 @@ MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented again
 
 ## Status
 
-M79 exact MySQL identity semantics. Version `0.9.0` targets stable `@nublox/metaobject@1.0.0` and `@nublox/mysql@3.1.0-rc.1`, and advances the object/metadata physical schemas to version `3`.
+M79 exact MySQL identity semantics. Version `0.9.0` targets stable `@nublox/metaobject@1.0.0` and `@nublox/mysql@3.1.0-rc.1`, advances the object/metadata physical schemas to version `3`, and is published under npm `next` through the trusted GitHub Actions workflow with provenance.
 
 The package remains inside the `NuBlox/metaobject` monorepo while the MetaObject core remains database-neutral and MySQL-free.
 
@@ -210,7 +210,7 @@ M79 also:
 - extends migration-stampede certification to require one ledger row each for versions 1, 2 and 3;
 - advances the adapter package to `0.9.0` while leaving stable core `@nublox/metaobject@1.0.0` unchanged.
 
-See [`../../docs/mysql-m79-exact-identity.md`](../../docs/mysql-m79-exact-identity.md).
+`0.9.0` was qualified on Node.js 22/24 and MySQL 8.0/8.4, then published from `storage-mysql-v0.9.0` under npm `next` using trusted GitHub Actions publication with signed provenance. See [`../../docs/mysql-m79-exact-identity.md`](../../docs/mysql-m79-exact-identity.md).
 
 ## Conformance
 
@@ -218,15 +218,15 @@ CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance
 
 ## Publication
 
-Version `0.9.0` is eligible for publication only from an exact green `main` commit. The intended immutable tag is:
+Version `0.9.0` is published from the immutable annotated tag:
 
 ```text
 storage-mysql-v0.9.0
 ```
 
-That tag triggers `.github/workflows/publish-storage-mysql.yml`, which verifies tag/version/main ancestry, reruns `release:check`, authenticates through npm trusted publishing and publishes explicitly with `--access public --tag next`.
+The tag resolves to commit `2416eabfa29d7d51db41ab431c472bf2d363c94f`. GitHub Actions workflow run `36367576342` verified tag/version/main ancestry, reran `release:check`, authenticated through npm trusted publishing and published explicitly with `--access public --tag next`. npm accepted `@nublox/metaobject-storage-mysql@0.9.0` and the workflow emitted signed provenance to the Sigstore transparency log.
 
-Published versions are immutable; fixes after publication require a new version. Existing `0.8.0` remains immutable.
+Published versions are immutable; fixes after publication require a new version. Existing `0.8.0` and `0.9.0` remain immutable.
 
 ## License
 
