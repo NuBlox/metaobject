@@ -6,6 +6,27 @@ The project follows Semantic Versioning once the v1 public API is released. The 
 
 ## Unreleased
 
+## 1.1.1
+
+Patch release correcting the reusable M81 query-comparison conformance fixture for production persistent adapters.
+
+### Fixed
+
+- `runQueryComparisonConformance()` no longer seeds an invalid `Date`, which conforming persistent adapters may correctly reject at their persistence boundary.
+- The cross-adapter Date vector now uses only persistable Date values while continuing to prove deterministic persisted Date ordering.
+- Invalid-Date comparison semantics remain covered by core comparison-policy tests rather than being imposed as a storage-persistence requirement.
+
+### Compatibility
+
+- No runtime comparison semantics change is introduced.
+- `legacy-js-v1` remains the default and `deterministic-codepoint-v1` remains opt-in.
+- `METAOBJECT_PUBLIC_API_VERSION` remains `"1"`.
+- Existing public query and storage contracts are unchanged.
+
+### Distribution
+
+- Stable publication remains under npm `latest` through the trusted GitHub Actions workflow from the exact green `v1.1.1` tag on `main`.
+
 ## 1.1.0
 
 First compatible v1 minor release, establishing explicit query-comparison semantics and adapter pushdown capability negotiation.
