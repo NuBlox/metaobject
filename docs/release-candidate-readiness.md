@@ -1,16 +1,16 @@
 # Release-candidate readiness
 
-This document records the completed first-v1 release-candidate gate and the criteria for promoting `@nublox/metaobject` to stable v1.
+This document records the completed first-v1 release-candidate gate and the promotion of `@nublox/metaobject` to stable v1.
 
 ## Current position
 
-M62–M68 are complete and `@nublox/metaobject@1.0.0-rc.1` is tagged and published on npm under `next` with Apache-2.0 licensing and copyright held by Stephen J T Spittal.
+M62–M68 are complete and `@nublox/metaobject@1.0.0-rc.1` was tagged and published on npm under `next` with Apache-2.0 licensing and copyright held by Stephen J T Spittal.
 
 M69–M75 exercised the published core contract through the independent MySQL storage adapter without requiring a core public-API or runtime correction. The adapter passed packed clean-consumer verification on Node.js 22/24 and full live persistence/certification on MySQL 8.0 and 8.4.
 
-M76 hardened package publication metadata, `prepublishOnly` verification and OIDC-ready trusted-publishing workflows. Comparing `v1.0.0-rc.1` with the M75 boundary showed no changes under core `src/`, `test/` or `type-tests/`; M76 likewise introduced no core runtime or declaration change. There is therefore no technical evidence requiring `1.0.0-rc.2`.
+M76 hardened package publication metadata, `prepublishOnly` verification and OIDC-ready trusted-publishing workflows. Comparing `v1.0.0-rc.1` with the M75 boundary showed no changes under core `src/`, `test/` or `type-tests/`; M76 likewise introduced no core runtime or declaration change. There was therefore no technical evidence requiring `1.0.0-rc.2`.
 
-M77 promoted the repository package version/changelog/README to stable `1.0.0` while deliberately leaving runtime source and public declarations untouched. The exact promotion revision passed the complete eight-lane branch qualification and then passed the complete eight-lane push-triggered `main` qualification at commit `8888553005dd11abb6c72f93fd18e0f0f15e1d4b`. The release tag and npm publication remain separate irreversible actions.
+M77 promoted the repository package version/changelog/README to stable `1.0.0` while deliberately leaving runtime source and public declarations untouched. The exact promotion revision passed the complete eight-lane branch qualification and then passed the complete eight-lane push-triggered `main` qualification. A subsequent release-automation-only commit `41a5f78c670ef9845fd19c12c8d9610d3da344c5` made MySQL-adapter prerelease tagging explicit without changing the core package. The annotated `v1.0.0` tag resolves to that commit. The tag-triggered trusted-publishing workflow reran the full release gate, including all 384 core tests and clean-consumer verification, and successfully published `@nublox/metaobject@1.0.0` to npm under `latest` with GitHub Actions provenance.
 
 ## Completed RC milestones
 
@@ -68,21 +68,21 @@ M77 promoted the repository package version/changelog/README to stable `1.0.0` w
 
 ## Stable-v1 promotion gate
 
-`@nublox/metaobject@1.0.0` is eligible for publication only when all of the following are true:
+`@nublox/metaobject@1.0.0` completed every stable-promotion requirement:
 
 - [x] the v1 public API boundary remains generation `"1"`;
 - [x] no known fail-open trust, lifecycle, concurrency or persistence defect remains;
 - [x] clean package consumers remain green;
 - [x] supported Node.js 20/22/24 checks remain green;
-- [x] the published RC has been exercised by an independent database adapter without requiring a core contract change;
-- [x] MySQL 8.0/8.4 qualification demonstrates the persistence contracts are externally implementable;
-- [x] post-RC development has not altered core runtime source or public declarations;
+- [x] the published RC was exercised by an independent database adapter without requiring a core contract change;
+- [x] MySQL 8.0/8.4 qualification demonstrated the persistence contracts are externally implementable;
+- [x] post-RC development did not alter core runtime source or public declarations;
 - [x] release publication is protected by pre-publish verification and canonical repository metadata;
 - [x] the M77 `1.0.0` promotion passed the complete branch and merged-`main` qualification matrix;
-- [ ] npm trusted publishing is configured for `@nublox/metaobject` against `publish-metaobject.yml`;
-- [ ] the exact `v1.0.0` tag is created from the verified green release-evidence `main` commit;
-- [ ] the tag-triggered publication workflow succeeds;
-- [ ] npm registry verification confirms `@nublox/metaobject@1.0.0`, `Apache-2.0` and `latest: 1.0.0`.
+- [x] npm trusted publishing is configured for `@nublox/metaobject` against `publish-metaobject.yml`;
+- [x] the exact `v1.0.0` tag was created from the verified green release commit `41a5f78c670ef9845fd19c12c8d9610d3da344c5`;
+- [x] the tag-triggered publication workflow succeeded;
+- [x] npm accepted and published `@nublox/metaobject@1.0.0` under `latest` with Apache-2.0 package metadata and GitHub Actions provenance.
 
 ## `rc.2` rule
 
