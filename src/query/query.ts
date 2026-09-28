@@ -1,3 +1,5 @@
+import type { QueryComparisonSemanticsId } from "./query-capabilities.js";
+
 export type QueryOperator =
   | "eq"
   | "neq"
@@ -27,9 +29,9 @@ export interface QuerySort {
 }
 
 /**
- * Storage-level query contract. M4 intentionally preserves this compact shape so
- * existing adapters remain source compatible. Advanced queries are executed from
- * MetaQuery through QueryEngine and may later be pushed down by capable adapters.
+ * Storage-level query contract. Existing callers default to stable-v1
+ * `legacy-js-v1` comparison semantics. New deterministic comparison policies
+ * are explicit opt-ins so minor releases cannot silently reorder results.
  */
 export interface ObjectQuery {
   readonly objectType: string;
@@ -37,6 +39,7 @@ export interface ObjectQuery {
   readonly orderBy?: readonly QuerySort[];
   readonly offset?: number;
   readonly limit?: number;
+  readonly comparisonSemantics?: QueryComparisonSemanticsId;
 }
 
 export interface QueryPredicate {
@@ -87,7 +90,7 @@ export interface CursorPagination {
   readonly after?: string;
 }
 
-/** Database-neutral M4 query model. */
+/** Database-neutral M4 query model with additive M81 comparison selection. */
 export interface MetaQuery {
   readonly objectType: string;
   readonly includeSubtypes?: boolean;
@@ -96,6 +99,7 @@ export interface MetaQuery {
   readonly orderBy?: readonly QueryOrder[];
   readonly aggregates?: readonly QueryAggregate[];
   readonly page?: CursorPagination;
+  readonly comparisonSemantics?: QueryComparisonSemanticsId;
 }
 
 export interface QueryRow {
