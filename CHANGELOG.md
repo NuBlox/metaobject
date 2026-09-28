@@ -6,6 +6,37 @@ The project follows Semantic Versioning once the v1 public API is released. The 
 
 ## Unreleased
 
+## 1.1.0
+
+First compatible v1 minor release, establishing explicit query-comparison semantics and adapter pushdown capability negotiation.
+
+### Added
+
+- Public `QueryPushdownCapabilities` vocabulary for filter, ordered-filter, attribute-ordering and pagination proof.
+- Stable comparison-semantics identifiers for `legacy-js-v1` and opt-in `deterministic-codepoint-v1`.
+- Explicit `comparisonSemantics` selection on `ObjectQuery` and `MetaQuery`; omission preserves the stable-v1 legacy behaviour.
+- Shared stable-v1 and deterministic scalar-comparison helpers exported from the package root.
+- Deterministic Unicode code-point string ordering, explicit scalar-kind ordering, special-number handling, Date ordering and configurable null placement.
+- Reusable `runQueryComparisonConformance()` differential qualification for production storage adapters.
+
+### Changed
+
+- `MemoryStorageAdapter` and `QueryEngine` now consume centralized comparison semantics rather than duplicating comparator logic.
+- Query range filtering, ordering, cursor continuation and min/max aggregation can execute the deterministic policy when explicitly selected.
+- The public API generation remains `METAOBJECT_PUBLIC_API_VERSION === "1"`; this is a compatible extension of the stable v1 contract.
+
+### Compatibility
+
+- Existing callers that omit `comparisonSemantics` retain `legacy-js-v1` behaviour.
+- Historical differences between storage-level and MetaQuery legacy comparison, including `NaN` and signed-zero edge behaviour, are intentionally preserved and regression-tested.
+- Existing `StorageAdapter` implementations remain source-compatible because capability declarations are optional.
+- Unknown comparison-semantics identifiers fail closed when ordered comparison is required.
+
+### Distribution
+
+- Stable npm publication remains under `latest` through the trusted GitHub Actions workflow.
+- Publication must originate from the exact green `v1.1.0` tag on `main`; the workflow verifies tag/version equality and main ancestry before running the complete release gate.
+
 ## 1.0.0
 
 First stable v1 release of the standalone `@nublox/metaobject` runtime.
