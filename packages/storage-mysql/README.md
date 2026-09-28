@@ -4,7 +4,7 @@ MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented again
 
 ## Status
 
-M78 stable-v1 adapter alignment. Version `0.8.0` targets the stable `@nublox/metaobject@1.0.0` contract and `@nublox/mysql@3.1.0-rc.1`.
+M79 exact MySQL identity semantics. Version `0.9.0` targets stable `@nublox/metaobject@1.0.0` and `@nublox/mysql@3.1.0-rc.1`, and advances the object/metadata physical schemas to version `3`.
 
 The package remains inside the `NuBlox/metaobject` monorepo while the MetaObject core remains database-neutral and MySQL-free.
 
@@ -58,11 +58,15 @@ console.log(plan.pushedFilters.length, plan.residualFilters.length);
 
 The bounded lossless codec preserves `Date`, `BigInt`, `undefined`, `NaN`, infinities and negative zero while rejecting cycles, accessors, sparse arrays, malformed canonical values and hostile/tampered payloads.
 
+Since M79, `object_type` and `object_id` explicitly use `utf8mb4_0900_bin`. Case variants and trailing-space variants are therefore distinct identities, matching the JavaScript string equality used by the stable-v1 reference adapter.
+
 ## Metadata persistence
 
 `MySqlMetadataStore` is backed by a separate InnoDB table keyed by `(object_type_id, object_type_version)` and implements optimistic metadata revisions, atomic ordered batches, deterministic filtering and fail-closed decoding.
 
 The metadata envelope is stored as validated `LONGTEXT` rather than native MySQL `JSON`, preserving exact record-member order required by the stable-v1 conformance suite while retaining `JSON_VALID(...)` enforcement.
+
+Since M79, `object_type_id` explicitly uses `utf8mb4_0900_bin` so metadata identities have the same case/trailing-space semantics as `MemoryMetadataStore`.
 
 ## M72 query pushdown
 
@@ -90,21 +94,39 @@ The core reference adapter currently uses JavaScript `localeCompare()` for strin
 
 `compileMySqlObjectQueryPlan()` is exported for diagnostics and tests. It reports the generated prepared SQL, parameters, pushed filters, residual filters and whether pagination was pushed.
 
-## M73 schema evolution
+## M73/M79 schema evolution
 
-The object and metadata physical schemas are both at version `2` and are managed by an append-only migration ledger. Version `1` remains the immutable pre-M73 baseline; version `2` adds composite indexes used by object/metadata lookup paths.
+The object and metadata physical schemas are both at version `3` and are managed by an append-only migration ledger:
 
-M73 provides:
+- version `1` — immutable pre-M73 baseline;
+- version `2` — composite lookup/query indexes;
+- version `3` — exact identity-column collations.
+
+Version 2 adds:
+
+```text
+object storage:   (object_type, schema_version, object_id)
+metadata storage: (object_type_id, status, object_type_version)
+```
+
+Version 3 changes only identity-bearing columns to `utf8mb4_0900_bin`:
+
+```text
+object storage:   object_type, object_id
+metadata storage: object_type_id
+```
+
+The migration layer provides:
 
 - SHA-256 migration-definition checksums;
 - contiguous-version and newer-than-supported guards;
-- automatic adoption of structurally valid pre-M73 version-1 tables;
+- automatic adoption of structurally valid legacy tables;
 - idempotent crash recovery when DDL committed before its ledger row was written;
 - a dedicated MySQL named advisory lock for each database/component/target-table migration stream;
-- structural verification through `information_schema` for engine, collation, required columns/types/nullability and required indexes;
+- structural verification through `information_schema` for engine, table collation, required columns/types/nullability, explicit identity-column collations and required indexes;
 - fail-closed rejection of migration-ledger tampering and required-schema drift.
 
-MySQL DDL is **not** treated as one rollbackable transaction. M73 relies on serialized initialization, MySQL's atomic DDL guarantees for individual operations, post-DDL verification and recoverable ledger reconciliation.
+MySQL DDL is **not** treated as one rollbackable transaction. The migrator relies on serialized initialization, MySQL's atomic DDL guarantees for individual operations, post-DDL verification and recoverable ledger reconciliation.
 
 Migration configuration is available through adapter/store options:
 
@@ -170,31 +192,41 @@ See [`../../docs/mysql-m75-release-qualification.md`](../../docs/mysql-m75-relea
 
 ## M78 stable-v1 alignment
 
-M78 moves the adapter from the immutable RC-core dependency used by `0.7.0` to the published stable core without changing adapter runtime behaviour:
+M78 moved the adapter from the immutable RC-core dependency used by `0.7.0` to stable core `1.0.0` without changing adapter runtime behaviour. The packed clean-consumer gate reads the actually installed core package and requires exactly `1.0.0` before runtime and strict TypeScript checks execute.
 
-- package version `0.7.0` → `0.8.0`;
-- `@nublox/metaobject` dependency `1.0.0-rc.1` → exact stable `1.0.0`;
-- package verification fails closed if that stable dependency drifts;
-- the packed clean-consumer gate reads the installed core package and requires exactly `1.0.0` before runtime and strict TypeScript checks execute;
-- Node.js 22/24 clean-consumer qualification and MySQL 8.0/8.4 live certification remain mandatory.
+`0.8.0` was qualified on Node.js 22/24 and MySQL 8.0/8.4, then published under npm `next` with trusted GitHub Actions provenance. See [`../../docs/mysql-m78-stable-v1-alignment.md`](../../docs/mysql-m78-stable-v1-alignment.md).
 
-M78 does not change object/metadata schema versions, codec formats, query semantics, migration history or public adapter exports. See [`../../docs/mysql-m78-stable-v1-alignment.md`](../../docs/mysql-m78-stable-v1-alignment.md).
+## M79 exact identity equality
+
+M79 corrects the remaining MySQL key-comparison mismatch with the stable-v1 reference stores.
+
+The prior `utf8mb4_unicode_ci` key behaviour could collapse identifiers that JavaScript treats as different. Schema v3 moves only the identity columns to `utf8mb4_0900_bin`, a binary `NO PAD` MySQL 8.x collation. The live regression suite explicitly persists and retrieves object and metadata identities that differ only by case or trailing spaces.
+
+M79 also:
+
+- upgrades v1 and v2 databases through the immutable migration chain to v3;
+- checks required identity `COLLATION_NAME` values through `information_schema`;
+- fails closed if a later DDL change reintroduces identity-collation drift;
+- extends migration-stampede certification to require one ledger row each for versions 1, 2 and 3;
+- advances the adapter package to `0.9.0` while leaving stable core `@nublox/metaobject@1.0.0` unchanged.
+
+See [`../../docs/mysql-m79-exact-identity.md`](../../docs/mysql-m79-exact-identity.md).
 
 ## Conformance
 
-CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.0 and 8.4, followed by M70/M71 concurrency/tamper tests, M72 live query-equivalence cases, M73 migration fresh-install/upgrade/race/drift/tamper coverage and the M74 certification stress gate. Separate Node.js 22/24 jobs install the packed adapter into a clean external consumer and verify runtime plus TypeScript package-root consumption against stable `@nublox/metaobject@1.0.0`.
+CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.0 and 8.4, followed by M70/M71 concurrency/tamper tests, M72 live query-equivalence cases, M73/M79 migration fresh-install/upgrade/race/drift/ledger-integrity handling, M79 exact identity regression coverage and the M74 certification stress gate. Separate Node.js 22/24 jobs install the packed adapter into a clean external consumer and verify runtime plus TypeScript package-root consumption against stable `@nublox/metaobject@1.0.0`.
 
 ## Publication
 
-Version `0.8.0` is published only from an exact green `main` commit. The immutable tag:
+Version `0.9.0` is eligible for publication only from an exact green `main` commit. The intended immutable tag is:
 
 ```text
-storage-mysql-v0.8.0
+storage-mysql-v0.9.0
 ```
 
-triggers `.github/workflows/publish-storage-mysql.yml`, which verifies tag/version/main ancestry, reruns `release:check`, authenticates through npm trusted publishing and publishes explicitly with `--access public --tag next`.
+That tag triggers `.github/workflows/publish-storage-mysql.yml`, which verifies tag/version/main ancestry, reruns `release:check`, authenticates through npm trusted publishing and publishes explicitly with `--access public --tag next`.
 
-Published versions are immutable; fixes after publication require a new version. Existing `0.7.0` is not republished or mutated.
+Published versions are immutable; fixes after publication require a new version. Existing `0.8.0` remains immutable.
 
 ## License
 
