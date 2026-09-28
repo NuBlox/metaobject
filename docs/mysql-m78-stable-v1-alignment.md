@@ -71,7 +71,7 @@ The workflow:
 The publish output recorded:
 
 ```text
-+nublox/metaobject-storage-mysql@0.8.0
++ @nublox/metaobject-storage-mysql@0.8.0
 ```
 
 with npm reporting successful publication of `@nublox/metaobject-storage-mysql@0.8.0` under `next`.
