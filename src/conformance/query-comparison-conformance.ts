@@ -37,13 +37,18 @@ function snapshot(
   };
 }
 
+// Cross-adapter conformance data must itself be portable across persistent
+// StorageAdapter implementations. Invalid Date behaviour remains covered by
+// the core comparison-policy unit tests, while this dataset uses only valid
+// Dates so adapters that correctly reject non-persistable invalid Dates can
+// still prove deterministic comparison semantics end-to-end.
 const DATASET = [
   snapshot("qcmp-01", "Z", -10, new Date("2026-01-04T00:00:00.000Z")),
   snapshot("qcmp-02", "a", 0, new Date("2026-01-02T00:00:00.000Z")),
   snapshot("qcmp-03", "á", 10, new Date("2026-01-03T00:00:00.000Z")),
   snapshot("qcmp-04", "😀", Infinity, new Date("2026-01-05T00:00:00.000Z")),
   snapshot("qcmp-05", "A", -Infinity, new Date("2026-01-01T00:00:00.000Z")),
-  snapshot("qcmp-06", "zz", Number.NaN, new Date("invalid")),
+  snapshot("qcmp-06", "zz", Number.NaN, new Date("2026-01-06T00:00:00.000Z")),
 ] as const;
 
 const QUERIES: readonly { readonly name: string; readonly query: ObjectQuery }[] = [
@@ -78,7 +83,7 @@ const QUERIES: readonly { readonly name: string; readonly query: ObjectQuery }[]
     },
   },
   {
-    name: "Date ordering including invalid Date",
+    name: "Date ordering across persisted values",
     query: {
       objectType: "conformance.query-comparison",
       orderBy: [{ attribute: "occurredAt", direction: "asc" }],
