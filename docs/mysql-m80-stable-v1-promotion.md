@@ -53,28 +53,29 @@ The immutable release tag for the stable adapter is:
 storage-mysql-v1.0.0
 ```
 
-The tag-triggered GitHub Actions workflow must:
+The tag-triggered GitHub Actions workflow:
 
-1. verify that the tag exactly matches `packages/storage-mysql/package.json`;
-2. verify that the tagged commit is contained in `main`;
-3. install dependencies with lifecycle-safe repository settings;
-4. run the complete package release gate;
-5. select the semantic npm dist-tag;
-6. publish through npm trusted publishing with provenance.
+1. verified that the tag exactly matched `packages/storage-mysql/package.json`;
+2. verified that the tagged commit was contained in `main`;
+3. installed dependencies with lifecycle-safe repository settings;
+4. ran the complete package release gate;
+5. selected npm `latest` for the stable version;
+6. published through npm trusted publishing with provenance.
 
-The release is not complete until npm reports `@nublox/metaobject-storage-mysql@1.0.0` under `latest` and the provenance evidence is visible for the published package.
+## Qualification and publication evidence
 
-## Required qualification
+- M80 pull request: `#90`;
+- merged `main` commit: `64c99d54c0b00c29b058e0f6dc3eb9df86357c52`;
+- immutable release tag: `storage-mysql-v1.0.0`;
+- tag-triggered publish workflow run: `36400098786`;
+- published package: `@nublox/metaobject-storage-mysql@1.0.0`;
+- npm dist-tags after registry propagation: `latest=1.0.0`, `next=0.9.0`;
+- Sigstore transparency-log index emitted by the publish workflow: `2981675400`;
+- clean external consumer installation of exact version `1.0.0`: passed;
+- core qualification: 384 tests passed, 0 failed;
+- adapter unit qualification: 14 tests passed, 0 failed.
 
-Before tagging, the M80 branch/main commit must pass the existing release qualification unchanged:
-
-```bash
-cd packages/storage-mysql
-npm install --package-lock=false
-npm run release:check
-```
-
-The repository CI additionally executes the supported Node.js clean-consumer lanes and live MySQL 8.0/8.4 persistence, migration, identity and certification lanes.
+The initial npm metadata checks immediately after publication still showed the previous dist-tags while npm was processing the release. A later direct registry query resolved exact version `1.0.0` and `latest=1.0.0`, and a clean temporary consumer successfully installed `@nublox/metaobject-storage-mysql@1.0.0`.
 
 ## Compatibility statement
 
@@ -86,15 +87,15 @@ Published `0.8.0` and `0.9.0` packages remain immutable and available through th
 
 ## Completion evidence
 
-M80 is complete only after all of the following are true:
+M80 is complete:
 
 - [x] package version is `1.0.0`;
 - [x] stable manifest publication channel is `latest`;
 - [x] workflow selects `latest` for stable and `next` for prerelease versions;
 - [x] package verification enforces the semantic dist-tag policy;
-- [ ] pull-request CI passes;
-- [ ] M80 is merged to `main`;
-- [ ] `storage-mysql-v1.0.0` is created from the exact green `main` commit;
-- [ ] trusted publication succeeds;
-- [ ] npm `latest` resolves to `@nublox/metaobject-storage-mysql@1.0.0`;
-- [ ] provenance is verified and the final publication evidence is recorded.
+- [x] pull-request CI passes;
+- [x] M80 is merged to `main`;
+- [x] `storage-mysql-v1.0.0` is created from the exact green `main` commit;
+- [x] trusted publication succeeds;
+- [x] npm `latest` resolves to `@nublox/metaobject-storage-mysql@1.0.0`;
+- [x] provenance is verified and the final publication evidence is recorded.
