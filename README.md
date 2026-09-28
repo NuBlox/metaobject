@@ -235,7 +235,7 @@ CI executes the complete core typecheck/build/test gate on Node.js 20, 22 and 24
 - **M75 — MySQL adapter external-consumer and release qualification** ✅
 - **M76 — Publication hardening and trusted-publishing preparation** ✅
 - **M77 — `v1.0.0` stable promotion and publication** ✅
-- **M78 — stable-v1 MySQL adapter alignment** — qualification in progress
+- **M78 — stable-v1 MySQL adapter alignment** ✅ engineering qualification complete; trusted publication pending
 
 Stable v1 is tagged as `v1.0.0` and published to npm as `@nublox/metaobject@1.0.0` under `latest` through the trusted GitHub Actions release workflow. Release evidence is maintained in [`docs/release-candidate-readiness.md`](docs/release-candidate-readiness.md) and [`docs/m77-stable-v1-promotion.md`](docs/m77-stable-v1-promotion.md). Adapter stable-v1 alignment is tracked in [`docs/mysql-m78-stable-v1-alignment.md`](docs/mysql-m78-stable-v1-alignment.md).
 
