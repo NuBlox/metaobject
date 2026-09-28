@@ -81,6 +81,7 @@ export * from "./modules/runtime-profile-store.js";
 export * from "./modules/runtime-profile-upgrade.js";
 export * from "./modules/runtime-registry.js";
 export * from "./query/query.js";
+export * from "./query/query-capabilities.js";
 export * from "./query/query-engine.js";
 export * from "./query/query-planner.js";
 export * from "./registry/object-type-registry.js";
