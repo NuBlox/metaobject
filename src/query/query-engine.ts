@@ -1,7 +1,8 @@
 import { MetadataError } from "../errors/errors.js";
 import type { ObjectReference, ObjectSnapshot } from "../runtime/model.js";
 import type { StorageAdapter } from "../storage/storage-adapter.js";
-import { compareLegacyMetaQueryScalar } from "./query-comparison.js";
+import { compareMetaQueryScalar } from "./query-comparison.js";
+import type { QueryComparisonSemanticsId } from "./query-capabilities.js";
 import type {
   MetaQuery,
   MetaQueryResult,
@@ -24,14 +25,19 @@ function scalarValues(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value.flat(Infinity) : [value];
 }
 
-function matchesScalar(value: unknown, operator: QueryOperator, expected: unknown): boolean {
+function matchesScalar(
+  value: unknown,
+  operator: QueryOperator,
+  expected: unknown,
+  comparisonSemantics?: QueryComparisonSemanticsId,
+): boolean {
   switch (operator) {
     case "eq": return Object.is(value, expected);
     case "neq": return !Object.is(value, expected);
-    case "gt": return compareLegacyMetaQueryScalar(value, expected) > 0;
-    case "gte": return compareLegacyMetaQueryScalar(value, expected) >= 0;
-    case "lt": return compareLegacyMetaQueryScalar(value, expected) < 0;
-    case "lte": return compareLegacyMetaQueryScalar(value, expected) <= 0;
+    case "gt": return compareMetaQueryScalar(value, expected, comparisonSemantics) > 0;
+    case "gte": return compareMetaQueryScalar(value, expected, comparisonSemantics) >= 0;
+    case "lt": return compareMetaQueryScalar(value, expected, comparisonSemantics) < 0;
+    case "lte": return compareMetaQueryScalar(value, expected, comparisonSemantics) <= 0;
     case "in": return Array.isArray(expected) && expected.some((item) => Object.is(value, item));
     case "notIn": return Array.isArray(expected) && !expected.some((item) => Object.is(value, item));
     case "contains":
@@ -44,14 +50,19 @@ function matchesScalar(value: unknown, operator: QueryOperator, expected: unknow
   }
 }
 
-function matchesResolved(value: unknown, operator: QueryOperator, expected: unknown): boolean {
+function matchesResolved(
+  value: unknown,
+  operator: QueryOperator,
+  expected: unknown,
+  comparisonSemantics?: QueryComparisonSemanticsId,
+): boolean {
   const values = scalarValues(value);
   if (operator === "isNull") return values.length === 0 || values.every((item) => item === null || item === undefined);
   if (operator === "isNotNull") return values.some((item) => item !== null && item !== undefined);
   if (operator === "neq" || operator === "notIn") {
-    return values.every((item) => matchesScalar(item, operator, expected));
+    return values.every((item) => matchesScalar(item, operator, expected, comparisonSemantics));
   }
-  return values.some((item) => matchesScalar(item, operator, expected));
+  return values.some((item) => matchesScalar(item, operator, expected, comparisonSemantics));
 }
 
 function encodeCursor(values: readonly unknown[]): string {
@@ -100,7 +111,11 @@ export class QueryEngine {
 
     const matched: ObjectSnapshot[] = [];
     for (const snapshot of candidates) {
-      if (!query.where || await this.matchesExpression(snapshot, query.where)) matched.push(snapshot);
+      if (!query.where || await this.matchesExpression(
+        snapshot,
+        query.where,
+        query.comparisonSemantics,
+      )) matched.push(snapshot);
     }
 
     const prepared = await Promise.all(
@@ -109,13 +124,27 @@ export class QueryEngine {
         orderValues: await Promise.all(plan.stableOrder.map((order) => this.resolvePath(snapshot, order.path))),
       })),
     );
-    prepared.sort((left, right) => this.comparePrepared(left, right, plan.stableOrder));
+    prepared.sort((left, right) => this.comparePrepared(
+      left,
+      right,
+      plan.stableOrder,
+      query.comparisonSemantics,
+    ));
 
     const totalMatched = prepared.length;
-    const aggregates = await this.calculateAggregates(matched, query.aggregates ?? []);
+    const aggregates = await this.calculateAggregates(
+      matched,
+      query.aggregates ?? [],
+      query.comparisonSemantics,
+    );
     const afterValues = query.page?.after ? decodeCursor(query.page.after) : undefined;
     const afterFiltered = afterValues
-      ? prepared.filter((row) => this.compareOrderValues(row.orderValues, afterValues, plan.stableOrder) > 0)
+      ? prepared.filter((row) => this.compareOrderValues(
+          row.orderValues,
+          afterValues,
+          plan.stableOrder,
+          query.comparisonSemantics,
+        ) > 0)
       : prepared;
 
     const requested = query.page?.first;
@@ -136,20 +165,28 @@ export class QueryEngine {
     };
   }
 
-  private async matchesExpression(snapshot: ObjectSnapshot, expression: QueryExpression): Promise<boolean> {
+  private async matchesExpression(
+    snapshot: ObjectSnapshot,
+    expression: QueryExpression,
+    comparisonSemantics?: QueryComparisonSemanticsId,
+  ): Promise<boolean> {
     if ("path" in expression) {
       const value = await this.resolvePath(snapshot, expression.path);
-      return matchesResolved(value, expression.operator, expression.value);
+      return matchesResolved(value, expression.operator, expression.value, comparisonSemantics);
     }
     if ("and" in expression) {
-      for (const child of expression.and) if (!await this.matchesExpression(snapshot, child)) return false;
+      for (const child of expression.and) {
+        if (!await this.matchesExpression(snapshot, child, comparisonSemantics)) return false;
+      }
       return true;
     }
     if ("or" in expression) {
-      for (const child of expression.or) if (await this.matchesExpression(snapshot, child)) return true;
+      for (const child of expression.or) {
+        if (await this.matchesExpression(snapshot, child, comparisonSemantics)) return true;
+      }
       return false;
     }
-    return !await this.matchesExpression(snapshot, expression.not);
+    return !await this.matchesExpression(snapshot, expression.not, comparisonSemantics);
   }
 
   private async project(snapshot: ObjectSnapshot, query: MetaQuery): Promise<QueryRow> {
@@ -167,6 +204,7 @@ export class QueryEngine {
   private async calculateAggregates(
     snapshots: readonly ObjectSnapshot[],
     definitions: readonly QueryAggregate[],
+    comparisonSemantics?: QueryComparisonSemanticsId,
   ): Promise<Readonly<Record<string, number | string | null>>> {
     const output: Record<string, number | string | null> = {};
     for (const aggregate of definitions) {
@@ -193,8 +231,8 @@ export class QueryEngine {
           output[aggregate.as] = numbers.length === 0 ? null : numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
           break;
         }
-        case "min": output[aggregate.as] = this.extreme(values, false); break;
-        case "max": output[aggregate.as] = this.extreme(values, true); break;
+        case "min": output[aggregate.as] = this.extreme(values, false, comparisonSemantics); break;
+        case "max": output[aggregate.as] = this.extreme(values, true, comparisonSemantics); break;
       }
     }
     return output;
@@ -207,27 +245,46 @@ export class QueryEngine {
     return values as number[];
   }
 
-  private extreme(values: readonly unknown[], maximum: boolean): number | string | null {
+  private extreme(
+    values: readonly unknown[],
+    maximum: boolean,
+    comparisonSemantics?: QueryComparisonSemanticsId,
+  ): number | string | null {
     if (values.length === 0) return null;
     let selected: unknown = values[0];
     for (const value of values.slice(1)) {
-      const compared = compareLegacyMetaQueryScalar(value, selected);
+      const compared = compareMetaQueryScalar(value, selected, comparisonSemantics);
       if ((maximum && compared > 0) || (!maximum && compared < 0)) selected = value;
     }
     if (typeof selected === "number" || typeof selected === "string") return selected;
     return String(selected);
   }
 
-  private comparePrepared(left: PreparedRow, right: PreparedRow, order: readonly QueryOrder[]): number {
-    return this.compareOrderValues(left.orderValues, right.orderValues, order);
+  private comparePrepared(
+    left: PreparedRow,
+    right: PreparedRow,
+    order: readonly QueryOrder[],
+    comparisonSemantics?: QueryComparisonSemanticsId,
+  ): number {
+    return this.compareOrderValues(left.orderValues, right.orderValues, order, comparisonSemantics);
   }
 
-  private compareOrderValues(left: readonly unknown[], right: readonly unknown[], order: readonly QueryOrder[]): number {
+  private compareOrderValues(
+    left: readonly unknown[],
+    right: readonly unknown[],
+    order: readonly QueryOrder[],
+    comparisonSemantics?: QueryComparisonSemanticsId,
+  ): number {
     for (let index = 0; index < order.length; index += 1) {
       const definition = order[index]!;
       const leftValue = this.sortScalar(left[index]);
       const rightValue = this.sortScalar(right[index]);
-      const result = compareLegacyMetaQueryScalar(leftValue, rightValue, definition.nulls ?? "first");
+      const result = compareMetaQueryScalar(
+        leftValue,
+        rightValue,
+        comparisonSemantics,
+        definition.nulls ?? "first",
+      );
       if (result !== 0) return definition.direction === "desc" ? -result : result;
     }
     return 0;
