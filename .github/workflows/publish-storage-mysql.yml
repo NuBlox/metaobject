@@ -43,5 +43,13 @@ jobs:
       - name: Run complete package release gate
         run: npm run release:check
 
-      - name: Publish under protected next tag
-        run: npm publish --access public --tag next
+      - name: Publish with semantic dist-tag
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ "${VERSION}" == *-* ]]; then
+            DIST_TAG=next
+          else
+            DIST_TAG=latest
+          fi
+          npm publish --access public --tag "${DIST_TAG}"
