@@ -1,9 +1,10 @@
 import mysqlPromise from "@nublox/mysql/promise";
-import type { ObjectQuery, QueryFilter } from "@nublox/metaobject";
-import {
-  MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
-  type MySqlQueryPushdownCapabilities,
-} from "./query-capabilities.js";
+import type {
+  ObjectQuery,
+  QueryFilter,
+  QueryPushdownCapabilities,
+} from "@nublox/metaobject";
+import { MYSQL_QUERY_PUSHDOWN_CAPABILITIES } from "./query-capabilities.js";
 import { quoteSqlIdentifier } from "./schema.js";
 
 interface CompiledPredicate {
@@ -161,7 +162,7 @@ function uint64PageParameter(value: number) {
 }
 
 function advertisesFilter(
-  capabilities: MySqlQueryPushdownCapabilities,
+  capabilities: QueryPushdownCapabilities,
   filter: QueryFilter,
 ): boolean {
   return capabilities.filterOperators.includes(filter.operator);
@@ -170,7 +171,7 @@ function advertisesFilter(
 export function compileMySqlObjectQueryPlan(
   tableName: string,
   query: ObjectQuery,
-  capabilities: MySqlQueryPushdownCapabilities = MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
+  capabilities: QueryPushdownCapabilities = MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
 ): MySqlObjectQueryPlan {
   const table = quoteSqlIdentifier(tableName);
   const pushedFilters: QueryFilter[] = [];
