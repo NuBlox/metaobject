@@ -15,6 +15,7 @@ import {
   migrateMySqlStorageSchema,
   type MySqlSchemaMigrationOptions,
 } from "./migrations.js";
+import { MYSQL_QUERY_PUSHDOWN_CAPABILITIES } from "./query-capabilities.js";
 import { compileMySqlObjectQueryPlan } from "./query-compiler.js";
 import {
   DEFAULT_MYSQL_STORAGE_TABLE,
@@ -171,6 +172,7 @@ function matches(value: unknown, filter: QueryFilter): boolean {
 }
 
 export class MySqlStorageAdapter implements StorageAdapter {
+  readonly queryPushdownCapabilities = MYSQL_QUERY_PUSHDOWN_CAPABILITIES;
   readonly #pool: mysql.PromisePool;
   readonly #tableName: string;
   readonly #table: string;
@@ -256,7 +258,7 @@ export class MySqlStorageAdapter implements StorageAdapter {
 
   async query(query: ObjectQuery): Promise<readonly ObjectSnapshot[]> {
     validateObjectKeyPart(query.objectType, "type");
-    const plan = compileMySqlObjectQueryPlan(this.#tableName, query);
+    const plan = compileMySqlObjectQueryPlan(this.#tableName, query, this.queryPushdownCapabilities);
     const [rows] = await this.#pool.execute<SnapshotRow[]>(plan.sql, [...plan.parameters]);
     let results = rows.map(rowToSnapshot);
     for (const filter of query.where ?? []) {

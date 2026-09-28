@@ -1,4 +1,5 @@
 import { ConcurrencyError, MetadataError } from "../errors/errors.js";
+import { compareLegacyStorageScalar } from "../query/query-comparison.js";
 import type { ObjectQuery, QueryFilter } from "../query/query.js";
 import type { ObjectIdentity, ObjectSnapshot } from "../runtime/model.js";
 import type { StorageAdapter, StorageBatchWrite } from "./storage-adapter.js";
@@ -6,23 +7,14 @@ import type { StorageAdapter, StorageBatchWrite } from "./storage-adapter.js";
 const keyOf = (identity: ObjectIdentity): string => `${identity.type}:${identity.id}`;
 const clone = (snapshot: ObjectSnapshot): ObjectSnapshot => structuredClone(snapshot);
 
-function compare(left: unknown, right: unknown): number {
-  if (left === right) return 0;
-  if (left === undefined || left === null) return -1;
-  if (right === undefined || right === null) return 1;
-  if (left instanceof Date && right instanceof Date) return left.getTime() - right.getTime();
-  if (typeof left === "number" && typeof right === "number") return left - right;
-  return String(left).localeCompare(String(right));
-}
-
 function matches(value: unknown, filter: QueryFilter): boolean {
   switch (filter.operator) {
     case "eq": return Object.is(value, filter.value);
     case "neq": return !Object.is(value, filter.value);
-    case "gt": return compare(value, filter.value) > 0;
-    case "gte": return compare(value, filter.value) >= 0;
-    case "lt": return compare(value, filter.value) < 0;
-    case "lte": return compare(value, filter.value) <= 0;
+    case "gt": return compareLegacyStorageScalar(value, filter.value) > 0;
+    case "gte": return compareLegacyStorageScalar(value, filter.value) >= 0;
+    case "lt": return compareLegacyStorageScalar(value, filter.value) < 0;
+    case "lte": return compareLegacyStorageScalar(value, filter.value) <= 0;
     case "in": return Array.isArray(filter.value) && filter.value.some((item) => Object.is(value, item));
     case "notIn": return Array.isArray(filter.value) && !filter.value.some((item) => Object.is(value, item));
     case "contains": return typeof value === "string" && typeof filter.value === "string" && value.includes(filter.value);
@@ -104,7 +96,7 @@ export class MemoryStorageAdapter implements StorageAdapter {
     }
     for (const sort of [...(query.orderBy ?? [])].reverse()) {
       results.sort((left, right) => {
-        const result = compare(left.values[sort.attribute], right.values[sort.attribute]);
+        const result = compareLegacyStorageScalar(left.values[sort.attribute], right.values[sort.attribute]);
         return sort.direction === "desc" ? -result : result;
       });
     }
