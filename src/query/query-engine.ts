@@ -1,6 +1,7 @@
 import { MetadataError } from "../errors/errors.js";
 import type { ObjectReference, ObjectSnapshot } from "../runtime/model.js";
 import type { StorageAdapter } from "../storage/storage-adapter.js";
+import { compareLegacyMetaQueryScalar } from "./query-comparison.js";
 import type {
   MetaQuery,
   MetaQueryResult,
@@ -19,21 +20,6 @@ interface PreparedRow {
   readonly orderValues: readonly unknown[];
 }
 
-function compareScalar(left: unknown, right: unknown, nulls: "first" | "last" = "first"): number {
-  if (Object.is(left, right)) return 0;
-  const leftNull = left === null || left === undefined;
-  const rightNull = right === null || right === undefined;
-  if (leftNull || rightNull) {
-    if (leftNull && rightNull) return 0;
-    const nullResult = leftNull ? -1 : 1;
-    return nulls === "first" ? nullResult : -nullResult;
-  }
-  if (typeof left === "number" && typeof right === "number") return left - right;
-  if (typeof left === "boolean" && typeof right === "boolean") return Number(left) - Number(right);
-  if (left instanceof Date && right instanceof Date) return left.getTime() - right.getTime();
-  return String(left).localeCompare(String(right));
-}
-
 function scalarValues(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value.flat(Infinity) : [value];
 }
@@ -42,10 +28,10 @@ function matchesScalar(value: unknown, operator: QueryOperator, expected: unknow
   switch (operator) {
     case "eq": return Object.is(value, expected);
     case "neq": return !Object.is(value, expected);
-    case "gt": return compareScalar(value, expected) > 0;
-    case "gte": return compareScalar(value, expected) >= 0;
-    case "lt": return compareScalar(value, expected) < 0;
-    case "lte": return compareScalar(value, expected) <= 0;
+    case "gt": return compareLegacyMetaQueryScalar(value, expected) > 0;
+    case "gte": return compareLegacyMetaQueryScalar(value, expected) >= 0;
+    case "lt": return compareLegacyMetaQueryScalar(value, expected) < 0;
+    case "lte": return compareLegacyMetaQueryScalar(value, expected) <= 0;
     case "in": return Array.isArray(expected) && expected.some((item) => Object.is(value, item));
     case "notIn": return Array.isArray(expected) && !expected.some((item) => Object.is(value, item));
     case "contains":
@@ -225,7 +211,7 @@ export class QueryEngine {
     if (values.length === 0) return null;
     let selected: unknown = values[0];
     for (const value of values.slice(1)) {
-      const compared = compareScalar(value, selected);
+      const compared = compareLegacyMetaQueryScalar(value, selected);
       if ((maximum && compared > 0) || (!maximum && compared < 0)) selected = value;
     }
     if (typeof selected === "number" || typeof selected === "string") return selected;
@@ -241,7 +227,7 @@ export class QueryEngine {
       const definition = order[index]!;
       const leftValue = this.sortScalar(left[index]);
       const rightValue = this.sortScalar(right[index]);
-      const result = compareScalar(leftValue, rightValue, definition.nulls ?? "first");
+      const result = compareLegacyMetaQueryScalar(leftValue, rightValue, definition.nulls ?? "first");
       if (result !== 0) return definition.direction === "desc" ? -result : result;
     }
     return 0;
