@@ -4,7 +4,7 @@ MySQL persistence for [`@nublox/metaobject`](../../README.md), implemented again
 
 ## Status
 
-M75 external-consumer and release qualification. Version `0.7.0` targets `@nublox/metaobject@1.0.0-rc.1` and `@nublox/mysql@3.1.0-rc.1`.
+M78 stable-v1 adapter alignment. Version `0.8.0` targets the stable `@nublox/metaobject@1.0.0` contract and `@nublox/mysql@3.1.0-rc.1`.
 
 The package remains inside the `NuBlox/metaobject` monorepo while the MetaObject core remains database-neutral and MySQL-free.
 
@@ -12,7 +12,7 @@ The package remains inside the `NuBlox/metaobject` monorepo while the MetaObject
 
 - Node.js 22 or newer
 - MySQL 8.x
-- `@nublox/metaobject@1.0.0-rc.1`
+- `@nublox/metaobject@1.0.0`
 - `@nublox/mysql@3.1.0-rc.1`
 
 ## Usage
@@ -62,13 +62,13 @@ The bounded lossless codec preserves `Date`, `BigInt`, `undefined`, `NaN`, infin
 
 `MySqlMetadataStore` is backed by a separate InnoDB table keyed by `(object_type_id, object_type_version)` and implements optimistic metadata revisions, atomic ordered batches, deterministic filtering and fail-closed decoding.
 
-The metadata envelope is stored as validated `LONGTEXT` rather than native MySQL `JSON`, preserving exact record-member order required by the current RC conformance suite while retaining `JSON_VALID(...)` enforcement.
+The metadata envelope is stored as validated `LONGTEXT` rather than native MySQL `JSON`, preserving exact record-member order required by the stable-v1 conformance suite while retaining `JSON_VALID(...)` enforcement.
 
 ## M72 query pushdown
 
 `MySqlStorageAdapter.query()` compiles the SQL-safe subset of `ObjectQuery` and executes it with NuBloxSQL server-side prepared statements through `PromisePool.execute()`.
 
-The following predicates are pushed into MySQL while preserving the RC `StorageAdapter` semantics:
+The following predicates are pushed into MySQL while preserving the stable-v1 `StorageAdapter` semantics:
 
 - `eq` and `neq` for persisted primitive values, including `undefined`, `null`, booleans, strings, finite numbers, `NaN`, infinities, negative zero and `BigInt`;
 - `in` and `notIn` using the same `Object.is` semantics as the reference adapter;
@@ -80,7 +80,7 @@ Every attribute JSON path is supplied as a bound prepared-statement parameter. A
 
 ### Deliberate fallback boundary
 
-The following remain in JavaScript for this RC-compatible milestone:
+The following remain in JavaScript for stable-v1 compatibility:
 
 - `gt`, `gte`, `lt`, `lte`;
 - `contains`, `startsWith`, `endsWith`;
@@ -168,19 +168,33 @@ npm run release:check:live
 
 See [`../../docs/mysql-m75-release-qualification.md`](../../docs/mysql-m75-release-qualification.md) for the exact release boundary and acceptance criteria.
 
+## M78 stable-v1 alignment
+
+M78 moves the adapter from the immutable RC-core dependency used by `0.7.0` to the published stable core without changing adapter runtime behaviour:
+
+- package version `0.7.0` → `0.8.0`;
+- `@nublox/metaobject` dependency `1.0.0-rc.1` → exact stable `1.0.0`;
+- package verification fails closed if that stable dependency drifts;
+- the packed clean-consumer gate reads the installed core package and requires exactly `1.0.0` before runtime and strict TypeScript checks execute;
+- Node.js 22/24 clean-consumer qualification and MySQL 8.0/8.4 live certification remain mandatory.
+
+M78 does not change object/metadata schema versions, codec formats, query semantics, migration history or public adapter exports. See [`../../docs/mysql-m78-stable-v1-alignment.md`](../../docs/mysql-m78-stable-v1-alignment.md).
+
 ## Conformance
 
-CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.0 and 8.4, followed by M70/M71 concurrency/tamper tests, M72 live query-equivalence cases, M73 migration fresh-install/upgrade/race/drift/tamper coverage and the M74 certification stress gate. Separate Node.js 22/24 jobs install the packed adapter into a clean external consumer and verify runtime plus TypeScript package-root consumption.
+CI executes both `runStorageAdapterConformance` and `runMetadataStoreConformance` against MySQL 8.0 and 8.4, followed by M70/M71 concurrency/tamper tests, M72 live query-equivalence cases, M73 migration fresh-install/upgrade/race/drift/tamper coverage and the M74 certification stress gate. Separate Node.js 22/24 jobs install the packed adapter into a clean external consumer and verify runtime plus TypeScript package-root consumption against stable `@nublox/metaobject@1.0.0`.
 
 ## Publication
 
-M75 qualifies version `0.7.0` for an explicit release operation but does not publish it automatically. After the exact release commit passes the M75 gates, publish deliberately with:
+Version `0.8.0` is published only from an exact green `main` commit. The immutable tag:
 
-```bash
-npm publish --access public --tag next
+```text
+storage-mysql-v0.8.0
 ```
 
-Published versions are immutable; fixes after publication require a new version.
+triggers `.github/workflows/publish-storage-mysql.yml`, which verifies tag/version/main ancestry, reruns `release:check`, authenticates through npm trusted publishing and publishes explicitly with `--access public --tag next`.
+
+Published versions are immutable; fixes after publication require a new version. Existing `0.7.0` is not republished or mutated.
 
 ## License
 

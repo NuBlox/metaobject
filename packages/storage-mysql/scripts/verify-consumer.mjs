@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const temp = mkdtempSync(join(tmpdir(), "metaobject-storage-mysql-consumer-"));
+const expectedMetaObjectVersion = "1.0.0";
 
 try {
   const packOutput = execFileSync("npm", ["pack", "--json", "--pack-destination", temp], {
@@ -33,6 +34,16 @@ try {
     ],
     { cwd: temp, stdio: "inherit" },
   );
+
+  const installedMetaObject = JSON.parse(readFileSync(
+    join(temp, "node_modules", "@nublox", "metaobject", "package.json"),
+    "utf8",
+  ));
+  if (installedMetaObject.version !== expectedMetaObjectVersion) {
+    throw new Error(
+      `Expected clean consumer to resolve @nublox/metaobject@${expectedMetaObjectVersion}, got ${installedMetaObject.version}.`,
+    );
+  }
 
   writeFileSync(join(temp, "consumer.mjs"), [
     'import { METAOBJECT_PUBLIC_API_VERSION } from "@nublox/metaobject";',
@@ -107,7 +118,9 @@ try {
     stdio: "inherit",
   });
 
-  console.log("Verified clean external ESM and TypeScript consumer installation for @nublox/metaobject-storage-mysql.");
+  console.log(
+    `Verified clean external ESM and TypeScript consumer installation for @nublox/metaobject-storage-mysql against @nublox/metaobject@${expectedMetaObjectVersion}.`,
+  );
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }
