@@ -32,16 +32,16 @@ M78 does **not** change:
 
 ## Qualification gate
 
-The exact M78 revision must pass all existing release lanes:
+The initial M78 qualification revision `3f288d71d3ae4d39c223b2e47c0fbecdfe03df74` passed CI run `36363913734` / run number `259` across all eight existing release lanes:
 
-- [ ] core Node.js 20 check;
-- [ ] core Node.js 22 check;
-- [ ] core Node.js 24 check;
-- [ ] core package + clean consumer;
-- [ ] MySQL adapter packed clean consumer on Node.js 22;
-- [ ] MySQL adapter packed clean consumer on Node.js 24;
-- [ ] MySQL 8.0 persistence/conformance/M74 certification;
-- [ ] MySQL 8.4 persistence/conformance/M74 certification.
+- [x] core Node.js 20 check;
+- [x] core Node.js 22 check;
+- [x] core Node.js 24 check;
+- [x] core package + clean consumer;
+- [x] MySQL adapter packed clean consumer on Node.js 22;
+- [x] MySQL adapter packed clean consumer on Node.js 24;
+- [x] MySQL 8.0 persistence/conformance/M74 certification;
+- [x] MySQL 8.4 persistence/conformance/M74 certification.
 
 In addition, `packages/storage-mysql/scripts/verify-package.mjs` requires the exact stable core dependency and `verify-consumer.mjs` reads the installed `node_modules/@nublox/metaobject/package.json` to prove a clean consumer resolved exactly `1.0.0`.
 
@@ -61,4 +61,4 @@ The workflow does not advance npm `latest`. Existing `0.7.0` remains immutable.
 
 ## Completion
 
-M78 is complete when the stable dependency is qualified through all eight lanes, merged to `main`, post-merge qualification is green, `storage-mysql-v0.8.0` publishes successfully through trusted publishing, and npm registry verification confirms the `next` release.
+The engineering/qualification portion of M78 is complete. Full milestone closure additionally requires merge to `main`, green post-merge qualification, successful trusted publication of `storage-mysql-v0.8.0`, and npm registry verification of the `next` release.
