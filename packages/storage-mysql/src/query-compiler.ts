@@ -1,5 +1,9 @@
 import mysqlPromise from "@nublox/mysql/promise";
 import type { ObjectQuery, QueryFilter } from "@nublox/metaobject";
+import {
+  MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
+  type MySqlQueryPushdownCapabilities,
+} from "./query-capabilities.js";
 import { quoteSqlIdentifier } from "./schema.js";
 
 interface CompiledPredicate {
@@ -156,9 +160,17 @@ function uint64PageParameter(value: number) {
   return mysqlPromise.param.uint64(value);
 }
 
+function advertisesFilter(
+  capabilities: MySqlQueryPushdownCapabilities,
+  filter: QueryFilter,
+): boolean {
+  return capabilities.filterOperators.includes(filter.operator);
+}
+
 export function compileMySqlObjectQueryPlan(
   tableName: string,
   query: ObjectQuery,
+  capabilities: MySqlQueryPushdownCapabilities = MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
 ): MySqlObjectQueryPlan {
   const table = quoteSqlIdentifier(tableName);
   const pushedFilters: QueryFilter[] = [];
@@ -167,6 +179,13 @@ export function compileMySqlObjectQueryPlan(
   const parameters: unknown[] = [query.objectType];
 
   for (const filter of query.where ?? []) {
+    if (!advertisesFilter(capabilities, filter)) {
+      residualFilters.push(filter);
+      continue;
+    }
+
+    // Capability declarations are advisory proof. The compiler still fails
+    // closed if no SQL translation exists for an advertised operator.
     const compiled = compileMySqlFilter(filter);
     if (!compiled) {
       residualFilters.push(filter);
@@ -178,9 +197,11 @@ export function compileMySqlObjectQueryPlan(
   }
 
   const hasAttributeSort = (query.orderBy?.length ?? 0) > 0;
+  const pagination = capabilities.pagination;
   const paginationPushed =
-    residualFilters.length === 0
-    && !hasAttributeSort
+    pagination.offsetLimit
+    && (!pagination.requiresFullyPushedFilters || residualFilters.length === 0)
+    && (!pagination.requiresNoAttributeOrdering || !hasAttributeSort)
     && safePageValue(query.offset)
     && safePageValue(query.limit);
 
