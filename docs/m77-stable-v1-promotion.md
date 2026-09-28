@@ -14,7 +14,7 @@ No core runtime source, public declaration, public API generation, persistence c
 
 ## Evidence supporting promotion
 
-The published RC has already passed the following independent evidence:
+The published RC passed the following independent evidence before stable promotion:
 
 - core Node.js 20, 22 and 24 CI;
 - packed clean ESM and TypeScript consumer installation;
@@ -25,6 +25,8 @@ The published RC has already passed the following independent evidence:
 - no core runtime or public-declaration correction required by that adapter work.
 
 A repository comparison from `v1.0.0-rc.1` through the M75 boundary found no post-RC changes to core `src/`, `test/` or `type-tests/`. M76 then hardened publication metadata and release automation without changing runtime code.
+
+The final release-automation-only commit `41a5f78c670ef9845fd19c12c8d9610d3da344c5` made MySQL-adapter prerelease tagging explicit and also left the core runtime/public declarations unchanged. The `v1.0.0` tag resolves exactly to that commit.
 
 ## Stable compatibility boundary
 
@@ -40,7 +42,7 @@ Generated `dist/**` deep imports remain internal and are not SemVer compatibilit
 
 ## Qualification gate
 
-The exact M77 promotion revision must pass:
+The M77 promotion passed:
 
 - core typecheck/build/test on Node.js 20;
 - core typecheck/build/test on Node.js 22;
@@ -51,29 +53,26 @@ The exact M77 promotion revision must pass:
 - MySQL 8.0 live persistence/integration/M74 certification;
 - MySQL 8.4 live persistence/integration/M74 certification.
 
-The adapter lanes are retained during stable promotion because they are external evidence that the unchanged v1 persistence contracts remain implementable.
+The adapter lanes were retained during stable promotion because they are external evidence that the unchanged v1 persistence contracts remain implementable.
 
-## Tag and publication boundary
+## Tag and publication evidence
 
-Passing the branch and merged-`main` gates does not itself publish stable v1.
+The irreversible release sequence completed successfully:
 
-The irreversible release sequence is:
-
-1. merge the exact green M77 promotion revision to `main`;
-2. verify the push-triggered `main` qualification run is green;
-3. configure npm trusted publishing for `@nublox/metaobject` against `.github/workflows/publish-metaobject.yml`;
-4. create `v1.0.0` from that exact verified `main` commit;
-5. allow the tag-triggered trusted-publishing workflow to rerun `release:check` and publish the package;
-6. verify the npm registry reports `@nublox/metaobject@1.0.0`, Apache-2.0 and `latest: 1.0.0`.
-
-Do not create `v1.0.0` before trusted publishing is configured unless an explicit manual-release path has been chosen, because the tag triggers the publication workflow.
+1. the stable `1.0.0` promotion was merged to `main` and passed the complete qualification matrix;
+2. npm trusted publishing was configured for `@nublox/metaobject` against `.github/workflows/publish-metaobject.yml`;
+3. the annotated `v1.0.0` tag was created and pushed, resolving to commit `41a5f78c670ef9845fd19c12c8d9610d3da344c5`;
+4. GitHub Actions workflow run `36362303649` verified tag/version/main ancestry and reran the complete release gate;
+5. the workflow passed all 384 core tests, package verification and clean external-consumer verification;
+6. trusted publishing published `@nublox/metaobject@1.0.0` under the `latest` dist-tag;
+7. npm emitted and published a GitHub Actions provenance statement to the Sigstore transparency log.
 
 ## `rc.2` escape hatch
 
-If M77 qualification exposes a defect requiring a core runtime/public declaration/compatibility change, stop stable promotion, restore the prerelease line and release `1.0.0-rc.2` instead.
+M77 did not expose a defect requiring a core runtime/public declaration/compatibility change, so `1.0.0-rc.2` was not required.
 
 A database-adapter-only defect, documentation correction or release-automation issue does not itself require a new core RC.
 
 ## Completion
 
-M77 engineering is complete when the version/changelog-only promotion is merged to `main` and the complete post-merge qualification matrix is green. Stable release completion additionally requires the `v1.0.0` tag, successful npm publication and registry verification.
+M77 is complete. Stable v1 is tagged as `v1.0.0` and published as `@nublox/metaobject@1.0.0` through npm trusted publishing with provenance, after the complete release gate passed on the exact tagged commit.
