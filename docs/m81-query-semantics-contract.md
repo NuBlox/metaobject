@@ -21,26 +21,14 @@ No adapter gains new SQL pushdown merely by declaring capabilities. Capability d
 
 ## Second increment — comparison centralisation and capability-driven planning
 
-The second M81 increment removes two sources of hidden semantic drift without changing the v1 observable contract.
-
 Core exposes shared stable-v1 comparison helpers:
 
 - `compareLegacyStorageScalar()` for `StorageAdapter.query` semantics;
 - `compareLegacyMetaQueryScalar()` for `MetaQuery`/`QueryEngine` semantics.
 
-The distinction is deliberate. The v1 implementations historically used different equality short circuits: storage comparison uses strict equality while `QueryEngine` uses `Object.is`. This is observable for `NaN` and signed zero. M81 preserves and tests that difference instead of silently normalising it in a minor release.
+The v1 implementations historically used different equality short circuits: storage comparison uses strict equality while `QueryEngine` uses `Object.is`. This is observable for `NaN` and signed zero. M81 preserves and tests that difference instead of silently normalising it in a minor release.
 
-`MemoryStorageAdapter` and `QueryEngine` consume the shared helpers, so future changes have one explicit semantic boundary rather than duplicated comparison functions.
-
-The MySQL adapter now:
-
-- exposes `queryPushdownCapabilities` on `MySqlStorageAdapter`;
-- exports a typed structural capability declaration while it remains independently qualified against published core `1.0.0`;
-- passes that declaration into `compileMySqlObjectQueryPlan()`;
-- makes filter and pagination planning consume the declaration;
-- still fails closed when a capability claims an operator for which no SQL compiler implementation exists.
-
-The capability declaration therefore constrains execution rather than merely documenting it.
+`MemoryStorageAdapter` and `QueryEngine` consume the shared helpers. The MySQL adapter exposes `queryPushdownCapabilities`, passes that declaration into its query compiler, and remains fail-closed when an advertised operator has no SQL translation.
 
 ## Third increment — deterministic code-point policy
 
@@ -65,9 +53,24 @@ The deterministic policy defines a total scalar ordering suitable for cross-runt
 
 Core exposes `compareDeterministicCodepointScalar()` plus dispatch helpers that fail closed for unknown semantics identifiers.
 
-`MemoryStorageAdapter` applies the selected policy to range filters and attribute ordering. `QueryEngine` applies the same selected policy to range predicates, ordering, cursor continuation and min/max aggregates. Dedicated regression vectors cover Unicode ordering, special numeric values, signed zero, invalid Dates, null placement and cross-type ordering, plus end-to-end reference execution.
+`MemoryStorageAdapter` applies the selected policy to range filters and attribute ordering. `QueryEngine` applies the same selected policy to range predicates, ordering, cursor continuation and min/max aggregates.
 
-No production database adapter advertises ordered pushdown for `deterministic-codepoint-v1` yet. That proof remains a separate qualification step.
+## Fourth increment — reusable differential conformance
+
+Core now exports `runQueryComparisonConformance()` as an adapter-independent qualification gate.
+
+The suite seeds the same deterministic corpus into the target adapter and the in-memory reference adapter, then compares exact result identities for:
+
+- Unicode code-point ordering;
+- Unicode range predicates;
+- numeric ordering including infinities and `NaN`;
+- numeric range predicates;
+- Date ordering including invalid Dates;
+- ordered offset/limit pagination.
+
+The default semantics under test are `deterministic-codepoint-v1`. A caller may provide an explicit reference-adapter factory or semantics identifier when extending the suite.
+
+This gate proves observable adapter equivalence. It does not by itself prove that a database performed the work natively; backend-specific compiler/explain tests must separately prove pushdown before the adapter advertises ordered capabilities.
 
 ## Capability model
 
@@ -78,7 +81,7 @@ No production database adapter advertises ordered pushdown for `deterministic-co
 3. named comparison semantics under which attribute ordering is equivalent;
 4. pagination preconditions.
 
-This is deliberately stricter than a single `supportsQueryPushdown=true` switch. An adapter may safely push equality/membership/null predicates while still refusing ordered comparisons.
+This is deliberately stricter than a single `supportsQueryPushdown=true` switch. An adapter may safely execute deterministic semantics through a residual path while still refusing to advertise native ordered pushdown.
 
 ## Stable-v1 comparison semantics
 
@@ -106,17 +109,17 @@ The current MySQL compiler proves this native subset:
 
 It deliberately does not prove `gt`, `gte`, `lt`, `lte` or attribute ordering against either named comparison policy yet.
 
-The planner reads the declared subset. Removing a capability forces that work back to the JavaScript residual path, and falsely advertising an untranslated operator still leaves it residual. This is the fail-closed behaviour required before adapters can negotiate richer semantics.
+The planner reads the declared subset. Removing a capability forces that work back to the JavaScript residual path, and falsely advertising an untranslated operator still leaves it residual.
 
 ## Remaining M81 work
 
-M81 is not yet complete. The remaining qualification path is:
+The remaining qualification path is now narrower:
 
-1. build reusable differential conformance vectors that production adapters can run against the deterministic reference policy;
-2. prove or reject MySQL equivalence separately for numeric/date ranges and Unicode code-point string ordering;
-3. advertise ordered-filter or attribute-ordering support only for cases that pass those vectors;
-4. advance core to a compatible minor release before the MySQL package imports the canonical core capability/comparison types directly;
-5. close M81 release evidence and then move broader native pushdown into M82.
+1. promote the compatible core additions in a minor release so sibling adapters can consume the canonical semantics and conformance contracts;
+2. align the MySQL adapter to that core minor and run `runQueryComparisonConformance()` live against MySQL 8.0 and 8.4;
+3. prove or reject native MySQL equivalence separately for numeric/date ranges and Unicode code-point ordering;
+4. advertise ordered-filter or attribute-ordering support only for cases that pass both semantic and native-pushdown proof;
+5. close M81 release evidence and move broader native pushdown into M82.
 
 ## Exit criteria
 
@@ -128,6 +131,7 @@ M81 is complete when:
 - planner/compiler diagnostics consume capability declarations;
 - stable-v1 comparison semantics are centralised and regression-tested;
 - `deterministic-codepoint-v1` is available as an explicit opt-in while `legacy-js-v1` remains the default;
-- differential tests prove reference/adapter equivalence for every ordered capability advertised by a production adapter.
+- the reusable differential comparison gate is published with core;
+- every ordered capability advertised by a production adapter has both differential semantic evidence and backend-native pushdown evidence.
 
 M82 can then use the deterministic policy to broaden MySQL range/order pushdown safely.
