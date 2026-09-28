@@ -17,6 +17,7 @@ test("MySQL satisfies deterministic query comparison conformance", { skip: !conf
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
     connectionLimit: 8,
+    charset: "utf8mb4",
     timezone: "Z",
     supportBigNumbers: true,
     bigNumberStrings: true,
