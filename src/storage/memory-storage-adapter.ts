@@ -1,5 +1,6 @@
 import { ConcurrencyError, MetadataError } from "../errors/errors.js";
-import { compareLegacyStorageScalar } from "../query/query-comparison.js";
+import { compareStorageQueryScalar } from "../query/query-comparison.js";
+import type { QueryComparisonSemanticsId } from "../query/query-capabilities.js";
 import type { ObjectQuery, QueryFilter } from "../query/query.js";
 import type { ObjectIdentity, ObjectSnapshot } from "../runtime/model.js";
 import type { StorageAdapter, StorageBatchWrite } from "./storage-adapter.js";
@@ -7,14 +8,18 @@ import type { StorageAdapter, StorageBatchWrite } from "./storage-adapter.js";
 const keyOf = (identity: ObjectIdentity): string => `${identity.type}:${identity.id}`;
 const clone = (snapshot: ObjectSnapshot): ObjectSnapshot => structuredClone(snapshot);
 
-function matches(value: unknown, filter: QueryFilter): boolean {
+function matches(
+  value: unknown,
+  filter: QueryFilter,
+  comparisonSemantics?: QueryComparisonSemanticsId,
+): boolean {
   switch (filter.operator) {
     case "eq": return Object.is(value, filter.value);
     case "neq": return !Object.is(value, filter.value);
-    case "gt": return compareLegacyStorageScalar(value, filter.value) > 0;
-    case "gte": return compareLegacyStorageScalar(value, filter.value) >= 0;
-    case "lt": return compareLegacyStorageScalar(value, filter.value) < 0;
-    case "lte": return compareLegacyStorageScalar(value, filter.value) <= 0;
+    case "gt": return compareStorageQueryScalar(value, filter.value, comparisonSemantics) > 0;
+    case "gte": return compareStorageQueryScalar(value, filter.value, comparisonSemantics) >= 0;
+    case "lt": return compareStorageQueryScalar(value, filter.value, comparisonSemantics) < 0;
+    case "lte": return compareStorageQueryScalar(value, filter.value, comparisonSemantics) <= 0;
     case "in": return Array.isArray(filter.value) && filter.value.some((item) => Object.is(value, item));
     case "notIn": return Array.isArray(filter.value) && !filter.value.some((item) => Object.is(value, item));
     case "contains": return typeof value === "string" && typeof filter.value === "string" && value.includes(filter.value);
@@ -92,11 +97,19 @@ export class MemoryStorageAdapter implements StorageAdapter {
   async query(query: ObjectQuery): Promise<readonly ObjectSnapshot[]> {
     let results = [...this.#store.values()].filter((item) => item.type === query.objectType);
     for (const filter of query.where ?? []) {
-      results = results.filter((item) => matches(item.values[filter.attribute], filter));
+      results = results.filter((item) => matches(
+        item.values[filter.attribute],
+        filter,
+        query.comparisonSemantics,
+      ));
     }
     for (const sort of [...(query.orderBy ?? [])].reverse()) {
       results.sort((left, right) => {
-        const result = compareLegacyStorageScalar(left.values[sort.attribute], right.values[sort.attribute]);
+        const result = compareStorageQueryScalar(
+          left.values[sort.attribute],
+          right.values[sort.attribute],
+          query.comparisonSemantics,
+        );
         return sort.direction === "desc" ? -result : result;
       });
     }

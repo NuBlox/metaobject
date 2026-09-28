@@ -9,6 +9,15 @@ import type { QueryOperator } from "./query.js";
 export const LEGACY_JS_V1_COMPARISON_SEMANTICS = "legacy-js-v1" as const;
 
 /**
+ * Opt-in deterministic comparison policy introduced by M81.
+ *
+ * Strings are ordered lexicographically by Unicode code point rather than by
+ * locale-sensitive collation. Other scalar kinds use explicitly documented
+ * type and value ordering in query-comparison.ts.
+ */
+export const DETERMINISTIC_CODEPOINT_V1_COMPARISON_SEMANTICS = "deterministic-codepoint-v1" as const;
+
+/**
  * Comparison-semantics identifiers are deliberately open strings so future
  * minor releases and third-party adapters can introduce named, testable
  * semantics without changing this structural contract.
