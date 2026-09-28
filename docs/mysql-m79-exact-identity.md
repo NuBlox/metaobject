@@ -117,12 +117,23 @@ M79 is qualified through the existing eight-lane release matrix:
 
 The live MySQL lanes execute the v3 upgrade and exact-identity regression coverage before the existing M74 stress gate.
 
-## Release boundary
+## Release evidence
 
-After the exact M79 `main` revision passes the full matrix, adapter `0.9.0` may be tagged as:
+The immutable annotated tag:
 
 ```text
 storage-mysql-v0.9.0
 ```
 
-The protected trusted-publishing workflow must rerun `release:check` and publish explicitly under npm `next`. Published `0.8.0` remains immutable.
+resolves to the qualified M79 commit `2416eabfa29d7d51db41ab431c472bf2d363c94f`.
+
+GitHub Actions workflow run `36367576342` completed successfully from that exact tag. The trusted-publishing job:
+
+- verified the tag/version relationship and that the tagged commit was on `main`;
+- reran the complete `release:check` gate;
+- repacked and installed the adapter in a clean external consumer and verified exact `@nublox/metaobject@1.0.0` resolution;
+- published with `npm publish --access public --tag next`;
+- published `@nublox/metaobject-storage-mysql@0.9.0` successfully;
+- emitted a signed GitHub Actions provenance statement to the Sigstore transparency log (log index `2981240416`).
+
+Published `0.8.0` and `0.9.0` are immutable. Any later fix requires a new package version and release tag.
