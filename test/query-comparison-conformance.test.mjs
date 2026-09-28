@@ -20,7 +20,7 @@ test("deterministic reference adapter passes query comparison conformance", asyn
     "Unicode code-point range predicate",
     "numeric ordering including infinities and NaN",
     "numeric range predicate",
-    "Date ordering including invalid Date",
+    "Date ordering across persisted values",
     "ordered pagination",
   ]);
 });
