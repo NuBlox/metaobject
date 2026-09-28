@@ -7,12 +7,12 @@ import {
 
 test("storage comparison preserves strict-equality NaN behaviour", () => {
   assert.equal(Number.isNaN(compareLegacyStorageScalar(Number.NaN, Number.NaN)), true);
-  assert.equal(compareLegacyStorageScalar(-0, 0), 0);
+  assert.equal(Object.is(compareLegacyStorageScalar(-0, 0), 0), true);
 });
 
 test("MetaQuery comparison preserves Object.is NaN behaviour", () => {
   assert.equal(compareLegacyMetaQueryScalar(Number.NaN, Number.NaN), 0);
-  assert.equal(compareLegacyMetaQueryScalar(-0, 0), 0);
+  assert.equal(Object.is(compareLegacyMetaQueryScalar(-0, 0), -0), true);
 });
 
 test("legacy comparison preserves explicit null ordering", () => {
