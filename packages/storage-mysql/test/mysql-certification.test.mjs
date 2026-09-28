@@ -391,7 +391,7 @@ test("M74 migration initialization remains idempotent under a connection-pool st
     );
     assert.deepEqual(
       ledgerRows.map((row) => [Number(row.schema_version), Number(row.row_count)]),
-      [[1, 1], [2, 1]],
+      [[1, 1], [2, 1], [3, 1]],
       "migration ledger must contain exactly one immutable row per schema version",
     );
 

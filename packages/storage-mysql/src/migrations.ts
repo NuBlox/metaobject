@@ -7,14 +7,17 @@ import {
   MYSQL_METADATA_V2_INDEX,
   createMetadataTableV1Sql,
   createMetadataV2MigrationSql,
+  createMetadataV3MigrationSql,
   validateMetadataTableName,
 } from "./metadata-schema.js";
 import {
   DEFAULT_MYSQL_STORAGE_TABLE,
+  MYSQL_IDENTITY_COLLATION,
   MYSQL_STORAGE_SCHEMA_VERSION,
   MYSQL_STORAGE_V2_INDEX,
   createStorageTableV1Sql,
   createStorageV2MigrationSql,
+  createStorageV3MigrationSql,
   quoteSqlIdentifier,
   validateSqlIdentifier,
 } from "./schema.js";
@@ -42,6 +45,7 @@ interface ColumnSpec {
   readonly name: string;
   readonly type: string;
   readonly nullable: "YES" | "NO";
+  readonly collation?: string;
 }
 
 interface IndexSpec {
@@ -54,6 +58,7 @@ interface ColumnRow extends Record<string, unknown> {
   COLUMN_NAME: string;
   COLUMN_TYPE: string;
   IS_NULLABLE: "YES" | "NO";
+  COLLATION_NAME: string | null;
 }
 
 interface IndexRow extends Record<string, unknown> {
@@ -110,6 +115,12 @@ const STORAGE_V1_COLUMNS: readonly ColumnSpec[] = [
   { name: "updated_at", type: "timestamp(6)", nullable: "NO" },
 ];
 
+const STORAGE_V3_COLUMNS: readonly ColumnSpec[] = STORAGE_V1_COLUMNS.map((column) =>
+  column.name === "object_type" || column.name === "object_id"
+    ? { ...column, collation: MYSQL_IDENTITY_COLLATION }
+    : column,
+);
+
 const STORAGE_V1_INDEXES: readonly IndexSpec[] = [
   { name: "PRIMARY", columns: ["object_type", "object_id"], unique: true },
   { name: "idx_metaobject_type", columns: ["object_type"], unique: false },
@@ -133,6 +144,12 @@ const METADATA_V1_COLUMNS: readonly ColumnSpec[] = [
   { name: "created_at", type: "varchar(64)", nullable: "NO" },
   { name: "updated_at", type: "varchar(64)", nullable: "NO" },
 ];
+
+const METADATA_V3_COLUMNS: readonly ColumnSpec[] = METADATA_V1_COLUMNS.map((column) =>
+  column.name === "object_type_id"
+    ? { ...column, collation: MYSQL_IDENTITY_COLLATION }
+    : column,
+);
 
 const METADATA_V1_INDEXES: readonly IndexSpec[] = [
   { name: "PRIMARY", columns: ["object_type_id", "object_type_version"], unique: true },
@@ -235,7 +252,7 @@ async function requiredTableIssues(
   }
 
   const [columnRows] = await connection.execute<ColumnRow[]>(
-    `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
+    `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLLATION_NAME
        FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
       ORDER BY ORDINAL_POSITION`,
@@ -258,6 +275,14 @@ async function requiredTableIssues(
     if (String(actual.IS_NULLABLE).toUpperCase() !== expected.nullable) {
       issues.push(
         `column '${expected.name}' nullable is '${String(actual.IS_NULLABLE)}', expected '${expected.nullable}'`,
+      );
+    }
+    if (
+      expected.collation !== undefined
+      && String(actual.COLLATION_NAME).toLowerCase() !== expected.collation.toLowerCase()
+    ) {
+      issues.push(
+        `column '${expected.name}' collation is '${String(actual.COLLATION_NAME)}', expected '${expected.collation}'`,
       );
     }
   }
@@ -321,6 +346,12 @@ const storageV2Issues = (
 ): Promise<readonly string[]> =>
   requiredTableIssues(connection, tableName, STORAGE_V1_COLUMNS, STORAGE_V2_INDEXES);
 
+const storageV3Issues = (
+  connection: mysql.PromiseConnection,
+  tableName: string,
+): Promise<readonly string[]> =>
+  requiredTableIssues(connection, tableName, STORAGE_V3_COLUMNS, STORAGE_V2_INDEXES);
+
 const metadataV1Issues = (
   connection: mysql.PromiseConnection,
   tableName: string,
@@ -332,6 +363,12 @@ const metadataV2Issues = (
   tableName: string,
 ): Promise<readonly string[]> =>
   requiredTableIssues(connection, tableName, METADATA_V1_COLUMNS, METADATA_V2_INDEXES);
+
+const metadataV3Issues = (
+  connection: mysql.PromiseConnection,
+  tableName: string,
+): Promise<readonly string[]> =>
+  requiredTableIssues(connection, tableName, METADATA_V3_COLUMNS, METADATA_V2_INDEXES);
 
 const STORAGE_MIGRATIONS: readonly MigrationDefinition[] = [
   {
@@ -357,6 +394,16 @@ const STORAGE_MIGRATIONS: readonly MigrationDefinition[] = [
       }
     },
     diagnose: storageV2Issues,
+  },
+  {
+    version: 3,
+    id: "storage-0003-exact-identity-collation",
+    checksumSource: createStorageV3MigrationSql("metaobject_migration_target"),
+    isSatisfied: async (connection, tableName) => (await storageV3Issues(connection, tableName)).length === 0,
+    apply: async (connection, tableName) => {
+      await connection.query(createStorageV3MigrationSql(tableName));
+    },
+    diagnose: storageV3Issues,
   },
 ];
 
@@ -385,20 +432,30 @@ const METADATA_MIGRATIONS: readonly MigrationDefinition[] = [
     },
     diagnose: metadataV2Issues,
   },
+  {
+    version: 3,
+    id: "metadata-0003-exact-identity-collation",
+    checksumSource: createMetadataV3MigrationSql("metaobject_migration_target"),
+    isSatisfied: async (connection, tableName) => (await metadataV3Issues(connection, tableName)).length === 0,
+    apply: async (connection, tableName) => {
+      await connection.query(createMetadataV3MigrationSql(tableName));
+    },
+    diagnose: metadataV3Issues,
+  },
 ];
 
 const STORAGE_PLAN: MigrationPlan = {
   component: "storage",
   currentVersion: MYSQL_STORAGE_SCHEMA_VERSION,
   migrations: STORAGE_MIGRATIONS,
-  diagnoseFinal: storageV2Issues,
+  diagnoseFinal: storageV3Issues,
 };
 
 const METADATA_PLAN: MigrationPlan = {
   component: "metadata",
   currentVersion: MYSQL_METADATA_SCHEMA_VERSION,
   migrations: METADATA_MIGRATIONS,
-  diagnoseFinal: metadataV2Issues,
+  diagnoseFinal: metadataV3Issues,
 };
 
 function validatePlan(plan: MigrationPlan): void {

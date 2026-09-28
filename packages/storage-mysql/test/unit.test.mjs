@@ -6,6 +6,7 @@ import {
   DEFAULT_MYSQL_STORAGE_TABLE,
   DEFAULT_MYSQL_TRANSACTION_RETRIES,
   MYSQL_IDENTIFIER_MAX_LENGTH,
+  MYSQL_IDENTITY_COLLATION,
   MYSQL_METADATA_KEY_MAX_LENGTH,
   MYSQL_METADATA_SCHEMA_VERSION,
   MYSQL_METADATA_V2_INDEX,
@@ -18,34 +19,46 @@ import {
   createMetadataTableSql,
   createMetadataTableV1Sql,
   createMetadataV2MigrationSql,
+  createMetadataV3MigrationSql,
   createStorageTableSql,
   createStorageTableV1Sql,
   createStorageV2MigrationSql,
+  createStorageV3MigrationSql,
   quoteSqlIdentifier,
   validateSqlIdentifier,
 } from "../dist/index.js";
 import { decodeRecord, encodeRecord } from "../dist/codec.js";
 
 test("object and metadata schema DDL are deterministic and versioned", () => {
-  assert.equal(MYSQL_STORAGE_SCHEMA_VERSION, 2);
+  assert.equal(MYSQL_IDENTITY_COLLATION, "utf8mb4_0900_bin");
+  assert.equal(MYSQL_STORAGE_SCHEMA_VERSION, 3);
   assert.equal(DEFAULT_MYSQL_STORAGE_TABLE, "metaobject_objects");
   const objectV1 = createStorageTableV1Sql();
   assert.match(objectV1, /CREATE TABLE IF NOT EXISTS `metaobject_objects`/);
   assert.doesNotMatch(objectV1, new RegExp(MYSQL_STORAGE_V2_INDEX));
+  assert.doesNotMatch(objectV1, new RegExp(MYSQL_IDENTITY_COLLATION));
   const objectSql = createStorageTableSql();
   assert.match(objectSql, /PRIMARY KEY \(object_type, object_id\)/);
   assert.match(objectSql, new RegExp(MYSQL_STORAGE_V2_INDEX));
+  assert.match(objectSql, new RegExp(`object_type VARCHAR\\(255\\).*${MYSQL_IDENTITY_COLLATION}`));
+  assert.match(objectSql, new RegExp(`object_id VARCHAR\\(255\\).*${MYSQL_IDENTITY_COLLATION}`));
   assert.match(createStorageV2MigrationSql(), /ALTER TABLE `metaobject_objects`/);
+  const storageV3 = createStorageV3MigrationSql();
+  assert.match(storageV3, new RegExp(`MODIFY object_type.*${MYSQL_IDENTITY_COLLATION}`));
+  assert.match(storageV3, new RegExp(`MODIFY object_id.*${MYSQL_IDENTITY_COLLATION}`));
 
-  assert.equal(MYSQL_METADATA_SCHEMA_VERSION, 2);
+  assert.equal(MYSQL_METADATA_SCHEMA_VERSION, 3);
   assert.equal(DEFAULT_MYSQL_METADATA_TABLE, "metaobject_metadata");
   const metadataV1 = createMetadataTableV1Sql();
   assert.match(metadataV1, /CREATE TABLE IF NOT EXISTS `metaobject_metadata`/);
   assert.doesNotMatch(metadataV1, new RegExp(MYSQL_METADATA_V2_INDEX));
+  assert.doesNotMatch(metadataV1, new RegExp(MYSQL_IDENTITY_COLLATION));
   const metadataSql = createMetadataTableSql();
   assert.match(metadataSql, /PRIMARY KEY \(object_type_id, object_type_version\)/);
   assert.match(metadataSql, new RegExp(MYSQL_METADATA_V2_INDEX));
+  assert.match(metadataSql, new RegExp(`object_type_id VARCHAR\\(255\\).*${MYSQL_IDENTITY_COLLATION}`));
   assert.match(createMetadataV2MigrationSql(), /ALTER TABLE `metaobject_metadata`/);
+  assert.match(createMetadataV3MigrationSql(), new RegExp(`MODIFY object_type_id.*${MYSQL_IDENTITY_COLLATION}`));
   assert.equal(DEFAULT_MYSQL_MIGRATION_TABLE, "metaobject_schema_migrations");
 });
 

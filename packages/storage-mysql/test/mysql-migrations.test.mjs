@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createPool } from "@nublox/mysql/promise";
 import {
+  MYSQL_IDENTITY_COLLATION,
   MYSQL_METADATA_SCHEMA_VERSION,
   MYSQL_STORAGE_SCHEMA_VERSION,
   MySqlStorageAdapter,
   createMetadataTableV1Sql,
+  createMetadataV2MigrationSql,
   createStorageTableV1Sql,
+  createStorageV2MigrationSql,
   migrateMySqlMetadataSchema,
   migrateMySqlStorageSchema,
 } from "../dist/index.js";
@@ -14,10 +17,23 @@ import {
 const configured = Boolean(process.env.MYSQL_HOST);
 
 function name(suffix) {
-  return `m73_${suffix}_${process.pid}`;
+  return `m79_${suffix}_${process.pid}`;
 }
 
-test("M73 versioned schema migrations are recoverable, serialized and drift-aware", { skip: !configured }, async () => {
+async function columnCollations(pool, tableName, columns) {
+  const [rows] = await pool.execute(
+    `SELECT COLUMN_NAME, COLLATION_NAME
+       FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME IN (${columns.map(() => "?").join(", ")})
+      ORDER BY COLUMN_NAME`,
+    [tableName, ...columns],
+  );
+  return Object.fromEntries(rows.map((row) => [String(row.COLUMN_NAME), String(row.COLLATION_NAME)]));
+}
+
+test("M73/M79 versioned schema migrations are recoverable, serialized, drift-aware and exact-identity safe", { skip: !configured }, async () => {
   const pool = createPool({
     host: process.env.MYSQL_HOST,
     port: Number(process.env.MYSQL_PORT ?? 3306),
@@ -39,8 +55,12 @@ test("M73 versioned schema migrations are recoverable, serialized and drift-awar
     tables.push(freshStorage);
     const fresh = await migrateMySqlStorageSchema(pool, freshStorage, options);
     assert.equal(fresh.schemaVersion, MYSQL_STORAGE_SCHEMA_VERSION);
-    assert.deepEqual(fresh.appliedVersions, [1, 2]);
+    assert.deepEqual(fresh.appliedVersions, [1, 2, 3]);
     assert.deepEqual(fresh.adoptedVersions, []);
+    assert.deepEqual(
+      await columnCollations(pool, freshStorage, ["object_id", "object_type"]),
+      { object_id: MYSQL_IDENTITY_COLLATION, object_type: MYSQL_IDENTITY_COLLATION },
+    );
 
     const freshAgain = await migrateMySqlStorageSchema(pool, freshStorage, options);
     assert.deepEqual(freshAgain.appliedVersions, []);
@@ -51,7 +71,19 @@ test("M73 versioned schema migrations are recoverable, serialized and drift-awar
     await pool.query(createStorageTableV1Sql(legacyStorage));
     const upgradedStorage = await migrateMySqlStorageSchema(pool, legacyStorage, options);
     assert.deepEqual(upgradedStorage.adoptedVersions, [1]);
-    assert.deepEqual(upgradedStorage.appliedVersions, [2]);
+    assert.deepEqual(upgradedStorage.appliedVersions, [2, 3]);
+
+    const legacyStorageV2 = name("legacy_storage_v2");
+    tables.push(legacyStorageV2);
+    await pool.query(createStorageTableV1Sql(legacyStorageV2));
+    await pool.query(createStorageV2MigrationSql(legacyStorageV2));
+    const upgradedStorageV2 = await migrateMySqlStorageSchema(pool, legacyStorageV2, options);
+    assert.deepEqual(upgradedStorageV2.adoptedVersions, [1, 2]);
+    assert.deepEqual(upgradedStorageV2.appliedVersions, [3]);
+    assert.deepEqual(
+      await columnCollations(pool, legacyStorageV2, ["object_id", "object_type"]),
+      { object_id: MYSQL_IDENTITY_COLLATION, object_type: MYSQL_IDENTITY_COLLATION },
+    );
 
     const legacyMetadata = name("legacy_metadata");
     tables.push(legacyMetadata);
@@ -59,7 +91,19 @@ test("M73 versioned schema migrations are recoverable, serialized and drift-awar
     const upgradedMetadata = await migrateMySqlMetadataSchema(pool, legacyMetadata, options);
     assert.equal(upgradedMetadata.schemaVersion, MYSQL_METADATA_SCHEMA_VERSION);
     assert.deepEqual(upgradedMetadata.adoptedVersions, [1]);
-    assert.deepEqual(upgradedMetadata.appliedVersions, [2]);
+    assert.deepEqual(upgradedMetadata.appliedVersions, [2, 3]);
+    assert.deepEqual(
+      await columnCollations(pool, legacyMetadata, ["object_type_id"]),
+      { object_type_id: MYSQL_IDENTITY_COLLATION },
+    );
+
+    const legacyMetadataV2 = name("legacy_metadata_v2");
+    tables.push(legacyMetadataV2);
+    await pool.query(createMetadataTableV1Sql(legacyMetadataV2));
+    await pool.query(createMetadataV2MigrationSql(legacyMetadataV2));
+    const upgradedMetadataV2 = await migrateMySqlMetadataSchema(pool, legacyMetadataV2, options);
+    assert.deepEqual(upgradedMetadataV2.adoptedVersions, [1, 2]);
+    assert.deepEqual(upgradedMetadataV2.appliedVersions, [3]);
 
     const concurrentTable = name("concurrent");
     tables.push(concurrentTable);
@@ -73,7 +117,7 @@ test("M73 versioned schema migrations are recoverable, serialized and drift-awar
         ORDER BY schema_version`,
       ["storage", concurrentTable],
     );
-    assert.deepEqual(concurrentLedger.map((row) => Number(row.schema_version)), [1, 2]);
+    assert.deepEqual(concurrentLedger.map((row) => Number(row.schema_version)), [1, 2, 3]);
 
     const driftTable = name("drift");
     tables.push(driftTable);

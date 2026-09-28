@@ -12,12 +12,13 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `mysql-storage-m70-hardening.md` — MySQL persistence-boundary, codec and optimistic-concurrency hardening.
 - `mysql-metadata-store.md` — M71 MySQL `MetadataStore`, transactional revisions and race/tamper handling.
 - `mysql-query-m72-pushdown.md` — M72 prepared SQL translation, safe predicate pushdown and fallback boundaries.
-- `mysql-schema-migrations.md` — M73 versioned physical-schema migrations, ledger integrity, locking and drift detection.
+- `mysql-schema-migrations.md` — M73/M79 versioned physical-schema migrations, ledger integrity, locking, identity collations and drift detection.
 - `mysql-m74-certification.md` — M74 large-dataset equivalence, contention, rollback, pool-pressure and migration-stampede certification.
 - `mysql-m75-release-qualification.md` — M75 clean external-consumer, Node matrix and MySQL 8.0/8.4 release qualification.
 - `mysql-m76-publication-promotion.md` — M76 publication hardening, trusted-publishing preparation and stable-core promotion gate.
 - `m77-stable-v1-promotion.md` — M77 stable `1.0.0` promotion, publication and release evidence.
 - `mysql-m78-stable-v1-alignment.md` — M78 alignment of the MySQL adapter with published stable `@nublox/metaobject@1.0.0`.
+- `mysql-m79-exact-identity.md` — M79 exact case/trailing-space identity semantics and physical-schema v3.
 - `releasing.md` — supported Node versions, package verification and release procedure.
 - `release-candidate-readiness.md` — completed RC gate and stable-promotion evidence.
 
@@ -34,6 +35,7 @@ This index groups the `@nublox/metaobject` documentation by architectural concer
 - `mysql-m74-certification.md`
 - `mysql-m75-release-qualification.md`
 - `mysql-m78-stable-v1-alignment.md`
+- `mysql-m79-exact-identity.md`
 - `code-generation.md`
 - `schema-evolution.md`
 - `metadata-release-pipeline.md`
@@ -76,12 +78,13 @@ The individual `runtime-fleet-convergence-handoff-recovery-trust-*` documents ar
 - `mysql-storage-m70-hardening.md` — production MySQL object-storage hardening evidence.
 - `mysql-metadata-store.md` — production MySQL metadata persistence evidence.
 - `mysql-query-m72-pushdown.md` — contract-preserving MySQL query translation evidence.
-- `mysql-schema-migrations.md` — physical-schema migration/recovery/drift evidence.
+- `mysql-schema-migrations.md` — physical-schema migration/recovery/drift evidence through schema v3.
 - `mysql-m74-certification.md` — repeatable MySQL adapter certification, stress evidence and performance regression guardrails.
 - `mysql-m75-release-qualification.md` — packed-package clean-consumer verification and supported MySQL-version qualification.
 - `mysql-m76-publication-promotion.md` — protected npm publication, OIDC workflow preparation and v1 promotion criteria.
 - `m77-stable-v1-promotion.md` — stable-v1 qualification, trusted publication and release closure.
 - `mysql-m78-stable-v1-alignment.md` — stable-core dependency alignment and adapter requalification/publication boundary.
+- `mysql-m79-exact-identity.md` — exact MySQL identity equality, v3 migration and regression evidence.
 - `releasing.md` — package verification and clean-consumer checks.
 - `../CHANGELOG.md` — release history and release-note convention.
 
