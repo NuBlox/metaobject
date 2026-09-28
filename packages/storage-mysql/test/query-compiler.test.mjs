@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compileMySqlObjectQueryPlan } from "../dist/index.js";
+import {
+  compileMySqlObjectQueryPlan,
+  MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
+} from "../dist/index.js";
 
 test("safe equality and pagination are pushed into prepared SQL", () => {
   const plan = compileMySqlObjectQueryPlan("metaobject_objects", {
@@ -101,4 +104,56 @@ test("IN, NOT IN and null predicates are SQL-safe", () => {
   assert.equal(plan.pushedFilters.length, 3);
   assert.equal(plan.residualFilters.length, 0);
   assert.equal(plan.paginationPushed, true);
+});
+
+test("planner obeys the declared filter capability set", () => {
+  const capabilities = {
+    ...MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
+    filterOperators: [],
+  };
+  const plan = compileMySqlObjectQueryPlan("metaobject_objects", {
+    objectType: "example.item",
+    where: [{ attribute: "score", operator: "eq", value: 20 }],
+    limit: 5,
+  }, capabilities);
+
+  assert.equal(plan.pushedFilters.length, 0);
+  assert.equal(plan.residualFilters.length, 1);
+  assert.equal(plan.paginationPushed, false);
+  assert.doesNotMatch(plan.sql, /JSON_EXTRACT/);
+  assert.doesNotMatch(plan.sql, /LIMIT/);
+});
+
+test("compiler fails closed when a capability advertises an untranslated operator", () => {
+  const capabilities = {
+    ...MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
+    filterOperators: [...MYSQL_QUERY_PUSHDOWN_CAPABILITIES.filterOperators, "gte"],
+  };
+  const plan = compileMySqlObjectQueryPlan("metaobject_objects", {
+    objectType: "example.item",
+    where: [{ attribute: "score", operator: "gte", value: 20 }],
+  }, capabilities);
+
+  assert.equal(plan.pushedFilters.length, 0);
+  assert.deepEqual(plan.residualFilters.map((filter) => filter.operator), ["gte"]);
+});
+
+test("planner obeys pagination capability switches", () => {
+  const capabilities = {
+    ...MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
+    pagination: {
+      ...MYSQL_QUERY_PUSHDOWN_CAPABILITIES.pagination,
+      offsetLimit: false,
+    },
+  };
+  const plan = compileMySqlObjectQueryPlan("metaobject_objects", {
+    objectType: "example.item",
+    where: [{ attribute: "score", operator: "eq", value: 20 }],
+    offset: 2,
+    limit: 5,
+  }, capabilities);
+
+  assert.equal(plan.pushedFilters.length, 1);
+  assert.equal(plan.paginationPushed, false);
+  assert.doesNotMatch(plan.sql, /LIMIT/);
 });
