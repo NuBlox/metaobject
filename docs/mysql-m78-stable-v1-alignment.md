@@ -32,7 +32,11 @@ M78 does **not** change:
 
 ## Qualification gate
 
-The initial M78 qualification revision `3f288d71d3ae4d39c223b2e47c0fbecdfe03df74` passed CI run `36363913734` / run number `259` across all eight existing release lanes:
+The initial M78 qualification revision `3f288d71d3ae4d39c223b2e47c0fbecdfe03df74` passed CI run `36363913734` / run number `259` across all eight existing release lanes.
+
+The final PR head `905776c3a3aa5dac805b5508c5c553269f4de4e3` then passed the same eight-lane gate in CI run `36364076380` / run number `261`, and the squash-merged `main` commit `e4852b17b037b0cc5954b84f98eec3cf17ef709b` passed the complete post-merge push gate in CI run `36364378662` / run number `262`.
+
+The release lanes were:
 
 - [x] core Node.js 20 check;
 - [x] core Node.js 22 check;
@@ -45,20 +49,37 @@ The initial M78 qualification revision `3f288d71d3ae4d39c223b2e47c0fbecdfe03df74
 
 In addition, `packages/storage-mysql/scripts/verify-package.mjs` requires the exact stable core dependency and `verify-consumer.mjs` reads the installed `node_modules/@nublox/metaobject/package.json` to prove a clean consumer resolved exactly `1.0.0`.
 
-## Publication boundary
+## Trusted publication evidence
 
-M78 publication remains separate from merge qualification.
+The immutable annotated tag `storage-mysql-v0.8.0` was created at exact commit:
 
-After the exact M78 `main` commit passes the full matrix:
+```text
+e4852b17b037b0cc5954b84f98eec3cf17ef709b
+```
 
-1. create immutable tag `storage-mysql-v0.8.0` at that exact commit;
-2. allow `.github/workflows/publish-storage-mysql.yml` to verify tag/version/main ancestry;
-3. rerun the package `release:check` in the trusted-publishing job;
-4. publish `@nublox/metaobject-storage-mysql@0.8.0` explicitly under npm `next`;
-5. verify the registry reports version `0.8.0` and `next: 0.8.0`.
+The tag-triggered `Publish MySQL storage adapter` workflow completed successfully in GitHub Actions run `36364723037` / run number `1`.
 
-The workflow does not advance npm `latest`. Existing `0.7.0` remains immutable.
+The workflow:
+
+1. resolved `storage-mysql-v0.8.0` to the expected M78 `main` commit;
+2. verified tag/version/main ancestry;
+3. reran the complete `release:check` gate;
+4. repacked and revalidated the clean external ESM/TypeScript consumer against exact stable `@nublox/metaobject@1.0.0`;
+5. published `@nublox/metaobject-storage-mysql@0.8.0` with `npm publish --access public --tag next`;
+6. emitted a signed GitHub Actions provenance statement and published it to the Sigstore transparency log at log index `2981039055`.
+
+The publish output recorded:
+
+```text
++ @nublox/metaobject-storage-mysql@0.8.0
+```
+
+with npm reporting successful publication of `@nublox/metaobject-storage-mysql@0.8.0` under `next`.
+
+The workflow deliberately does not advance npm `latest`; `0.7.0` remains immutable.
 
 ## Completion
 
-The engineering/qualification portion of M78 is complete. Full milestone closure additionally requires merge to `main`, green post-merge qualification, successful trusted publication of `storage-mysql-v0.8.0`, and npm registry verification of the `next` release.
+M78 is complete.
+
+The adapter is aligned to stable `@nublox/metaobject@1.0.0`, qualified through the complete Node/MySQL matrix, merged to `main`, tagged immutably as `storage-mysql-v0.8.0`, and published successfully through npm trusted publishing with GitHub Actions provenance under the protected `next` dist-tag.
