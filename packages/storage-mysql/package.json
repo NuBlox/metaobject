@@ -40,7 +40,7 @@
     "prepublishOnly": "npm run release:check",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "npm run build && node --test test/unit.test.mjs test/query-compiler.test.mjs",
-    "test:integration": "npm run build && node --test test/mysql-conformance.test.mjs test/mysql-migrations.test.mjs test/mysql-identity.test.mjs",
+    "test:integration": "npm run build && node --test test/mysql-conformance.test.mjs test/mysql-query-comparison-conformance.test.mjs test/mysql-migrations.test.mjs test/mysql-identity.test.mjs",
     "test:certification": "npm run build && node --test test/mysql-certification.test.mjs",
     "test:live": "npm run test:integration && npm run test:certification",
     "test": "npm run test:unit",
