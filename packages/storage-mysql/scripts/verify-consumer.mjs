@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const temp = mkdtempSync(join(tmpdir(), "metaobject-storage-mysql-consumer-"));
-const expectedMetaObjectVersion = "1.0.0";
+const expectedMetaObjectVersion = "1.1.0";
 
 try {
   const packOutput = execFileSync("npm", ["pack", "--json", "--pack-destination", temp], {
