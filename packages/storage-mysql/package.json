@@ -1,6 +1,6 @@
 {
   "name": "@nublox/metaobject-storage-mysql",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "Release-qualified MySQL StorageAdapter, MetadataStore, safe query pushdown and versioned schema migrations for @nublox/metaobject.",
   "author": "Stephen J T Spittal",
   "type": "module",
@@ -17,7 +17,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "next"
+    "tag": "latest"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
