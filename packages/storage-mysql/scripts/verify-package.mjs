@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const expectedRepository = "git+https://github.com/NuBlox/metaobject.git";
-const expectedMetaObjectVersion = "1.0.0";
+const expectedMetaObjectVersion = "1.1.0";
 const isPrerelease = String(packageJson.version).includes("-");
 const expectedDistTag = isPrerelease ? "next" : "latest";
 
