@@ -1,4 +1,4 @@
-import type { mysql as native } from "nubloxsql";
+import type * as native from "@nublox/mysql";
 
 export type NativeMySqlPool = native.Pool;
 export type NativeMySqlConnection = native.Connection;
