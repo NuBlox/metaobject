@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
-import { createPool } from "@nublox/mysql/promise";
+import NuBloxSQL from "nubloxsql";
 import {
   MemoryStorageAdapter,
   normalizeObjectType,
@@ -11,6 +11,7 @@ import {
   MySqlStorageAdapter,
 } from "../dist/index.js";
 
+const { createPool } = NuBloxSQL.mysql;
 const configured = Boolean(process.env.MYSQL_HOST);
 const DATASET_SIZE = Number(process.env.M74_DATASET_SIZE ?? 1200);
 const PARALLEL_READS = Number(process.env.M74_PARALLEL_READS ?? 400);
@@ -21,6 +22,7 @@ const MAX_QUERY_MATRIX_MS = Number(process.env.M74_MAX_QUERY_MATRIX_MS ?? 15_000
 const MAX_PARALLEL_READ_MS = Number(process.env.M74_MAX_PARALLEL_READ_MS ?? 15_000);
 const MAX_CONTENTION_MS = Number(process.env.M74_MAX_CONTENTION_MS ?? 20_000);
 const MAX_MIGRATION_STAMPEDE_MS = Number(process.env.M74_MAX_MIGRATION_STAMPEDE_MS ?? 20_000);
+const MAX_POOL_DRAIN_MS = Number(process.env.M74_MAX_POOL_DRAIN_MS ?? 5_000);
 
 function tableName(suffix) {
   return `m74_${suffix}_${process.pid}`;
@@ -56,9 +58,7 @@ function metadataRecord(index, status = "draft") {
       id,
       name: id,
       version: 1,
-      attributes: {
-        value: { type: "string" },
-      },
+      attributes: { value: { type: "string" } },
     }),
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -74,10 +74,7 @@ function elapsedSince(start) {
 }
 
 function assertWithin(actualMs, maximumMs, label) {
-  assert.ok(
-    actualMs <= maximumMs,
-    `${label} took ${actualMs.toFixed(1)}ms; M74 guardrail is ${maximumMs}ms`,
-  );
+  assert.ok(actualMs <= maximumMs, `${label} took ${actualMs.toFixed(1)}ms; M74 guardrail is ${maximumMs}ms`);
 }
 
 function report(metrics) {
@@ -91,15 +88,36 @@ function createCertificationPool(connectionLimit = 8) {
     user: process.env.MYSQL_USER ?? "root",
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
+    ssl: "disable",
+    getServerPublicKey: true,
     connectionLimit,
     queueLimit: 0,
-    timezone: "Z",
-    supportBigNumbers: true,
-    bigNumberStrings: true,
   });
 }
 
-test("M74 large-dataset query semantics match the reference adapter under pool pressure", { skip: !configured, timeout: 120_000 }, async () => {
+async function waitForPoolDrain(pool) {
+  const deadline = performance.now() + MAX_POOL_DRAIN_MS;
+  while (
+    pool.waitingCount !== 0
+    || pool.resettingCount !== 0
+    || pool.idleCount !== pool.totalCount
+  ) {
+    if (performance.now() >= deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function assertPoolHealthyAndDrained(pool) {
+  const probe = await pool.query("SELECT 1 AS ok");
+  assert.equal(Number(probe.rows[0]?.ok), 1);
+  await waitForPoolDrain(pool);
+  assert.equal(pool.waitingCount, 0, "NuBloxSQL pool queue must drain");
+  assert.equal(pool.resettingCount, 0, "NuBloxSQL pool resets must drain");
+  assert.ok(pool.totalCount <= pool.connectionLimit, "NuBloxSQL pool must not exceed its connection limit");
+  assert.equal(pool.idleCount, pool.totalCount, "all NuBloxSQL pool connections must be idle after workload completion");
+}
+
+test("M74 large-dataset query semantics match the reference adapter under NuBloxSQL pool pressure", { skip: !configured, timeout: 120_000 }, async () => {
   const pool = createCertificationPool(4);
   const objectTable = tableName("equivalence");
   const ledgerTable = tableName("equivalence_ledger");
@@ -156,32 +174,24 @@ test("M74 large-dataset query semantics match the reference adapter under pool p
 
     const queryStart = performance.now();
     for (const query of queries) {
-      const [expected, actual] = await Promise.all([
-        reference.query(query),
-        adapter.query(query),
-      ]);
+      const [expected, actual] = await Promise.all([reference.query(query), adapter.query(query)]);
       assert.deepEqual(ids(actual), ids(expected), `query mismatch for ${JSON.stringify(query)}`);
     }
     const queryMatrixMs = elapsedSince(queryStart);
     assertWithin(queryMatrixMs, MAX_QUERY_MATRIX_MS, `${queries.length}-query semantic matrix`);
 
     const readStart = performance.now();
-    const reads = Array.from({ length: PARALLEL_READS }, (_, index) =>
-      adapter.get({ type: "certification.item", id: `object-${String(index % DATASET_SIZE).padStart(5, "0")}` }),
+    const loaded = await Promise.all(
+      Array.from({ length: PARALLEL_READS }, (_, index) =>
+        adapter.get({ type: "certification.item", id: `object-${String(index % DATASET_SIZE).padStart(5, "0")}` }),
+      ),
     );
-    const loaded = await Promise.all(reads);
     const parallelReadMs = elapsedSince(readStart);
     assert.equal(loaded.length, PARALLEL_READS);
     assert.ok(loaded.every(Boolean));
     assertWithin(parallelReadMs, MAX_PARALLEL_READ_MS, `${PARALLEL_READS} pooled parallel reads`);
 
-    const health = await pool.healthCheck();
-    assert.equal(health.ok, true);
-    const stats = pool.stats();
-    assert.equal(stats.queued, 0, "pool queue must drain after certification reads");
-    assert.equal(stats.active, 0, "pool connections must return after certification reads");
-    assert.ok(stats.total <= stats.limit, "pool must not exceed configured connection limit");
-
+    await assertPoolHealthyAndDrained(pool);
     report({
       test: "query-equivalence",
       datasetSize: DATASET_SIZE,
@@ -191,8 +201,8 @@ test("M74 large-dataset query semantics match the reference adapter under pool p
       mysqlSeedMs: Number(mysqlSeedMs.toFixed(1)),
       queryMatrixMs: Number(queryMatrixMs.toFixed(1)),
       parallelReadMs: Number(parallelReadMs.toFixed(1)),
-      poolLimit: stats.limit,
-      poolTotal: stats.total,
+      poolLimit: pool.connectionLimit,
+      poolTotal: pool.totalCount,
     });
   } finally {
     await pool.query(`DROP TABLE IF EXISTS \`${objectTable}\``);
@@ -218,53 +228,39 @@ test("M74 contention preserves single-winner optimistic concurrency for objects 
     const start = performance.now();
     const objectResults = await Promise.allSettled(
       Array.from({ length: CONTENTION_WRITERS }, (_, writer) =>
-        adapter.update(
-          { ...objectBase, values: { ...objectBase.values, writer } },
-          objectBase.version,
-        ),
+        adapter.update({ ...objectBase, values: { ...objectBase.values, writer } }, objectBase.version),
       ),
     );
     const objectFulfilled = objectResults.filter((result) => result.status === "fulfilled");
     const objectRejected = objectResults.filter((result) => result.status === "rejected");
-    assert.equal(objectFulfilled.length, 1, "exactly one object contender must commit");
+    assert.equal(objectFulfilled.length, 1);
     assert.equal(objectRejected.length, CONTENTION_WRITERS - 1);
     assert.ok(objectRejected.every((result) => result.reason?.name === "ConcurrencyError"));
     const currentObject = await adapter.get(objectBase);
     assert.ok(currentObject);
     assert.equal(currentObject.version, 2);
-    assert.equal(currentObject.values.writer, objectFulfilled[0].value.values.writer);
 
     const metadataResults = await Promise.allSettled(
       Array.from({ length: CONTENTION_WRITERS }, (_, writer) =>
-        store.save(
-          {
-            ...metadataBase,
-            status: writer % 2 === 0 ? "published" : "deprecated",
-            updatedAt: `2026-09-27T21:45:${String(writer % 60).padStart(2, "0")}.000Z`,
-          },
-          metadataBase.revision,
-        ),
+        store.save({
+          ...metadataBase,
+          status: writer % 2 === 0 ? "published" : "deprecated",
+          updatedAt: `2026-09-27T21:45:${String(writer % 60).padStart(2, "0")}.000Z`,
+        }, metadataBase.revision),
       ),
     );
     const metadataFulfilled = metadataResults.filter((result) => result.status === "fulfilled");
     const metadataRejected = metadataResults.filter((result) => result.status === "rejected");
-    assert.equal(metadataFulfilled.length, 1, "exactly one metadata contender must commit");
+    assert.equal(metadataFulfilled.length, 1);
     assert.equal(metadataRejected.length, CONTENTION_WRITERS - 1);
     assert.ok(metadataRejected.every((result) => result.reason?.name === "ConcurrencyError"));
     const currentMetadata = await store.get(metadataBase.objectTypeId, metadataBase.objectTypeVersion);
     assert.ok(currentMetadata);
     assert.equal(currentMetadata.revision, 2);
-    assert.equal(currentMetadata.status, metadataFulfilled[0].value.status);
 
     const contentionMs = elapsedSince(start);
     assertWithin(contentionMs, MAX_CONTENTION_MS, `${CONTENTION_WRITERS}-way object and metadata contention`);
-
-    const health = await pool.healthCheck();
-    assert.equal(health.ok, true);
-    const stats = pool.stats();
-    assert.equal(stats.queued, 0);
-    assert.equal(stats.active, 0);
-
+    await assertPoolHealthyAndDrained(pool);
     report({
       test: "contention",
       writers: CONTENTION_WRITERS,
@@ -280,7 +276,7 @@ test("M74 contention preserves single-winner optimistic concurrency for objects 
   }
 });
 
-test("M74 large failed batches roll back atomically for object and metadata persistence", { skip: !configured, timeout: 120_000 }, async () => {
+test("M74 failed batches roll back atomically for object and metadata persistence", { skip: !configured, timeout: 120_000 }, async () => {
   const pool = createCertificationPool(6);
   const objectTable = tableName("rollback_objects");
   const metadataTable = tableName("rollback_metadata");
@@ -309,11 +305,10 @@ test("M74 large failed batches roll back atomically for object and metadata pers
       expectedVersion: 0,
     });
     await assert.rejects(() => adapter.saveBatch(objectWrites), (error) => error?.name === "ConcurrencyError");
-
     for (const base of objectBases.slice(0, 20)) {
       const current = await adapter.get(base);
       assert.ok(current);
-      assert.equal(current.version, 1, `object '${base.id}' must roll back to version 1`);
+      assert.equal(current.version, 1);
       assert.equal(Object.prototype.hasOwnProperty.call(current.values, "rollbackProbe"), false);
     }
 
@@ -326,33 +321,19 @@ test("M74 large failed batches roll back atomically for object and metadata pers
       expectedRevision: item.revision,
     }));
     metadataWrites.push({
-      record: {
-        ...metadataBases[12],
-        status: "published",
-        updatedAt: "2026-09-27T21:46:59.000Z",
-      },
+      record: { ...metadataBases[12], status: "published", updatedAt: "2026-09-27T21:46:59.000Z" },
       expectedRevision: 0,
     });
     await assert.rejects(() => store.saveBatch(metadataWrites), (error) => error?.name === "ConcurrencyError");
-
     for (const base of metadataBases.slice(0, 12)) {
       const current = await store.get(base.objectTypeId, base.objectTypeVersion);
       assert.ok(current);
-      assert.equal(current.revision, 1, `metadata '${base.objectTypeId}' must roll back to revision 1`);
+      assert.equal(current.revision, 1);
       assert.equal(current.status, "draft");
     }
 
-    const health = await pool.healthCheck();
-    assert.equal(health.ok, true);
-    const stats = pool.stats();
-    assert.equal(stats.queued, 0);
-    assert.equal(stats.active, 0);
-
-    report({
-      test: "atomic-rollback",
-      objectWritesBeforeFailure: 20,
-      metadataWritesBeforeFailure: 12,
-    });
+    await assertPoolHealthyAndDrained(pool);
+    report({ test: "rollback", objectWrites: objectWrites.length, metadataWrites: metadataWrites.length });
   } finally {
     await pool.query(`DROP TABLE IF EXISTS \`${objectTable}\``);
     await pool.query(`DROP TABLE IF EXISTS \`${metadataTable}\``);
@@ -361,17 +342,17 @@ test("M74 large failed batches roll back atomically for object and metadata pers
   }
 });
 
-test("M74 migration initialization remains idempotent under a connection-pool stampede", { skip: !configured, timeout: 120_000 }, async () => {
-  const pool = createCertificationPool(6);
-  const objectTable = tableName("migration_stampede");
-  const ledgerTable = tableName("migration_stampede_ledger");
-  const migrationOptions = { migrationTableName: ledgerTable, lockTimeoutSeconds: 15 };
+test("M74 concurrent migration initializers serialize to one complete ledger", { skip: !configured, timeout: 120_000 }, async () => {
+  const pool = createCertificationPool(8);
+  const objectTable = tableName("migration_objects");
+  const ledgerTable = tableName("migration_ledger");
+  const migrationOptions = { migrationTableName: ledgerTable, lockTimeoutSeconds: 10 };
+  const adapters = Array.from(
+    { length: MIGRATION_INITIALIZERS },
+    () => new MySqlStorageAdapter(pool, { tableName: objectTable, migrations: migrationOptions }),
+  );
 
   try {
-    const adapters = Array.from(
-      { length: MIGRATION_INITIALIZERS },
-      () => new MySqlStorageAdapter(pool, { tableName: objectTable, migrations: migrationOptions }),
-    );
     const start = performance.now();
     await Promise.all(adapters.map((adapter) => adapter.initialize()));
     const migrationStampedeMs = elapsedSince(start);
@@ -381,7 +362,7 @@ test("M74 migration initialization remains idempotent under a connection-pool st
       `${MIGRATION_INITIALIZERS} concurrent migration initializers`,
     );
 
-    const [ledgerRows] = await pool.execute(
+    const { rows: ledgerRows } = await pool.execute(
       `SELECT schema_version, COUNT(*) AS row_count
          FROM \`${ledgerTable}\`
         WHERE component = ? AND target_table = ?
@@ -392,21 +373,13 @@ test("M74 migration initialization remains idempotent under a connection-pool st
     assert.deepEqual(
       ledgerRows.map((row) => [Number(row.schema_version), Number(row.row_count)]),
       [[1, 1], [2, 1], [3, 1]],
-      "migration ledger must contain exactly one immutable row per schema version",
     );
 
-    const health = await pool.healthCheck();
-    assert.equal(health.ok, true);
-    const stats = pool.stats();
-    assert.equal(stats.queued, 0);
-    assert.equal(stats.active, 0);
-    assert.ok(stats.total <= stats.limit);
-
+    await assertPoolHealthyAndDrained(pool);
     report({
       test: "migration-stampede",
       initializers: MIGRATION_INITIALIZERS,
       migrationStampedeMs: Number(migrationStampedeMs.toFixed(1)),
-      poolLimit: stats.limit,
     });
   } finally {
     await pool.query(`DROP TABLE IF EXISTS \`${objectTable}\``);

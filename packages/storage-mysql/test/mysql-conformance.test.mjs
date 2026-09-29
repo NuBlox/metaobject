@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPool } from "@nublox/mysql/promise";
+import NuBloxSQL from "nubloxsql";
 import {
   normalizeObjectType,
   runMetadataStoreConformance,
@@ -8,6 +8,7 @@ import {
 } from "@nublox/metaobject";
 import { MySqlMetadataStore, MySqlStorageAdapter } from "../dist/index.js";
 
+const { createPool } = NuBloxSQL.mysql;
 const configured = Boolean(process.env.MYSQL_HOST);
 
 function snapshot(id, value = 1) {
@@ -46,10 +47,9 @@ test("MySQL persistence satisfies MetaObject conformance and hardening", { skip:
     user: process.env.MYSQL_USER ?? "root",
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
+    ssl: "disable",
+    getServerPublicKey: true,
     connectionLimit: 8,
-    timezone: "Z",
-    supportBigNumbers: true,
-    bigNumberStrings: true,
   });
   const tables = [];
   let sequence = 0;
@@ -112,96 +112,31 @@ test("MySQL persistence satisfies MetaObject conformance and hardening", { skip:
 
     const queryAdapter = await createAdapter();
     await queryAdapter.saveBatch([
-      {
-        kind: "insert",
-        snapshot: {
-          id: "a",
-          type: "conformance.pushdown",
-          schemaVersion: 1,
-          version: 0,
-          values: { score: 10, state: "open", nullable: null },
-          relationships: {},
-        },
-      },
-      {
-        kind: "insert",
-        snapshot: {
-          id: "b",
-          type: "conformance.pushdown",
-          schemaVersion: 1,
-          version: 0,
-          values: { score: 20, state: "closed", nullable: undefined },
-          relationships: {},
-        },
-      },
-      {
-        kind: "insert",
-        snapshot: {
-          id: "c",
-          type: "conformance.pushdown",
-          schemaVersion: 1,
-          version: 0,
-          values: { score: 20, state: "open", nullable: "value" },
-          relationships: {},
-        },
-      },
-      {
-        kind: "insert",
-        snapshot: {
-          id: "d",
-          type: "conformance.pushdown",
-          schemaVersion: 1,
-          version: 0,
-          values: { score: Number.NaN, state: "pending" },
-          relationships: {},
-        },
-      },
+      { kind: "insert", snapshot: { id: "a", type: "conformance.pushdown", schemaVersion: 1, version: 0, values: { score: 10, state: "open", nullable: null }, relationships: {} } },
+      { kind: "insert", snapshot: { id: "b", type: "conformance.pushdown", schemaVersion: 1, version: 0, values: { score: 20, state: "closed", nullable: undefined }, relationships: {} } },
+      { kind: "insert", snapshot: { id: "c", type: "conformance.pushdown", schemaVersion: 1, version: 0, values: { score: 20, state: "open", nullable: "value" }, relationships: {} } },
+      { kind: "insert", snapshot: { id: "d", type: "conformance.pushdown", schemaVersion: 1, version: 0, values: { score: Number.NaN, state: "pending" }, relationships: {} } },
     ]);
 
-    const pagedEquality = await queryAdapter.query({
-      objectType: "conformance.pushdown",
-      where: [{ attribute: "score", operator: "eq", value: 20 }],
-      offset: 1,
-      limit: 1,
-    });
+    const pagedEquality = await queryAdapter.query({ objectType: "conformance.pushdown", where: [{ attribute: "score", operator: "eq", value: 20 }], offset: 1, limit: 1 });
     assert.deepEqual(pagedEquality.map((item) => item.id), ["c"]);
 
-    const stateIn = await queryAdapter.query({
-      objectType: "conformance.pushdown",
-      where: [{ attribute: "state", operator: "in", value: ["open", "pending"] }],
-    });
+    const stateIn = await queryAdapter.query({ objectType: "conformance.pushdown", where: [{ attribute: "state", operator: "in", value: ["open", "pending"] }] });
     assert.deepEqual(stateIn.map((item) => item.id), ["a", "c", "d"]);
 
-    const nullable = await queryAdapter.query({
-      objectType: "conformance.pushdown",
-      where: [{ attribute: "nullable", operator: "isNull" }],
-    });
+    const nullable = await queryAdapter.query({ objectType: "conformance.pushdown", where: [{ attribute: "nullable", operator: "isNull" }] });
     assert.deepEqual(nullable.map((item) => item.id), ["a", "b", "d"]);
 
-    const undefinedEquality = await queryAdapter.query({
-      objectType: "conformance.pushdown",
-      where: [{ attribute: "nullable", operator: "eq", value: undefined }],
-    });
+    const undefinedEquality = await queryAdapter.query({ objectType: "conformance.pushdown", where: [{ attribute: "nullable", operator: "eq", value: undefined }] });
     assert.deepEqual(undefinedEquality.map((item) => item.id), ["b", "d"]);
 
-    const nanEquality = await queryAdapter.query({
-      objectType: "conformance.pushdown",
-      where: [{ attribute: "score", operator: "eq", value: Number.NaN }],
-    });
+    const nanEquality = await queryAdapter.query({ objectType: "conformance.pushdown", where: [{ attribute: "score", operator: "eq", value: Number.NaN }] });
     assert.deepEqual(nanEquality.map((item) => item.id), ["d"]);
 
-    const residualComparison = await queryAdapter.query({
-      objectType: "conformance.pushdown",
-      where: [{ attribute: "score", operator: "gte", value: 15 }],
-      orderBy: [{ attribute: "score", direction: "asc" }],
-      limit: 2,
-    });
+    const residualComparison = await queryAdapter.query({ objectType: "conformance.pushdown", where: [{ attribute: "score", operator: "gte", value: 15 }], orderBy: [{ attribute: "score", direction: "asc" }], limit: 2 });
     assert.deepEqual(residualComparison.map((item) => item.id), ["b", "c"]);
 
-    const residualString = await queryAdapter.query({
-      objectType: "conformance.pushdown",
-      where: [{ attribute: "state", operator: "contains", value: "pen" }],
-    });
+    const residualString = await queryAdapter.query({ objectType: "conformance.pushdown", where: [{ attribute: "state", operator: "contains", value: "pen" }] });
     assert.deepEqual(residualString.map((item) => item.id), ["a", "c", "d"]);
 
     const raceAdapter = await createAdapter();
@@ -225,11 +160,7 @@ test("MySQL persistence satisfies MetaObject conformance and hardening", { skip:
       raceAdapter.update({ ...deleteBase, values: { value: "updated" } }, deleteBase.version),
       raceAdapter.delete(deleteBase, deleteBase.version),
     ]);
-    assert.equal(
-      [updateOutcome, deleteOutcome].filter((result) => result.status === "fulfilled").length,
-      1,
-      "update/delete race must have exactly one winner",
-    );
+    assert.equal([updateOutcome, deleteOutcome].filter((result) => result.status === "fulfilled").length, 1, "update/delete race must have exactly one winner");
     const rejectedOutcome = [updateOutcome, deleteOutcome].find((result) => result.status === "rejected");
     assert.ok(rejectedOutcome);
     assert.equal(rejectedOutcome.reason?.name, "ConcurrencyError");
@@ -244,35 +175,15 @@ test("MySQL persistence satisfies MetaObject conformance and hardening", { skip:
 
     const tamperAdapter = await createAdapter();
     const validEmptyEnvelope = JSON.stringify({ format: 1, value: { kind: "object", value: {} } });
-    const invalidDateEnvelope = JSON.stringify({
-      format: 1,
-      value: {
-        kind: "object",
-        value: { poisoned: { kind: "date", value: "not-a-date" } },
-      },
-    });
-    await pool.execute(
-      `INSERT INTO \`${tamperAdapter.tableName}\`
-        (object_type, object_id, schema_version, version, values_json, relationships_json)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      ["conformance.tamper", "bad-date", 1, 1, invalidDateEnvelope, validEmptyEnvelope],
-    );
-    await assert.rejects(
-      () => tamperAdapter.get({ type: "conformance.tamper", id: "bad-date" }),
-      /Invalid MySQL snapshot encoding/,
-    );
+    const invalidDateEnvelope = JSON.stringify({ format: 1, value: { kind: "object", value: { poisoned: { kind: "date", value: "not-a-date" } } } });
+    await pool.execute(`INSERT INTO \`${tamperAdapter.tableName}\` (object_type, object_id, schema_version, version, values_json, relationships_json) VALUES (?, ?, ?, ?, ?, ?)`, ["conformance.tamper", "bad-date", 1, 1, invalidDateEnvelope, validEmptyEnvelope]);
+    await assert.rejects(() => tamperAdapter.get({ type: "conformance.tamper", id: "bad-date" }), /Invalid MySQL snapshot encoding/);
 
     const metadataRaceStore = await createStore();
     const metadataBase = await metadataRaceStore.save(metadataRecord("meta.race"));
     const metadataRace = await Promise.allSettled([
-      metadataRaceStore.save(
-        { ...metadataBase, status: "published", updatedAt: "2026-09-27T20:01:00.000Z" },
-        metadataBase.revision,
-      ),
-      metadataRaceStore.save(
-        { ...metadataBase, status: "deprecated", updatedAt: "2026-09-27T20:02:00.000Z" },
-        metadataBase.revision,
-      ),
+      metadataRaceStore.save({ ...metadataBase, status: "published", updatedAt: "2026-09-27T20:01:00.000Z" }, metadataBase.revision),
+      metadataRaceStore.save({ ...metadataBase, status: "deprecated", updatedAt: "2026-09-27T20:02:00.000Z" }, metadataBase.revision),
     ]);
     assert.equal(metadataRace.filter((result) => result.status === "fulfilled").length, 1);
     const metadataRaceLoser = metadataRace.find((result) => result.status === "rejected");
@@ -285,38 +196,18 @@ test("MySQL persistence satisfies MetaObject conformance and hardening", { skip:
 
     const metadataDeleteBase = await metadataRaceStore.save(metadataRecord("meta.delete-race"));
     const [metadataUpdateOutcome, metadataDeleteOutcome] = await Promise.allSettled([
-      metadataRaceStore.save(
-        { ...metadataDeleteBase, status: "published", updatedAt: "2026-09-27T20:03:00.000Z" },
-        metadataDeleteBase.revision,
-      ),
-      metadataRaceStore.delete(
-        metadataDeleteBase.objectTypeId,
-        metadataDeleteBase.objectTypeVersion,
-        metadataDeleteBase.revision,
-      ),
+      metadataRaceStore.save({ ...metadataDeleteBase, status: "published", updatedAt: "2026-09-27T20:03:00.000Z" }, metadataDeleteBase.revision),
+      metadataRaceStore.delete(metadataDeleteBase.objectTypeId, metadataDeleteBase.objectTypeVersion, metadataDeleteBase.revision),
     ]);
-    assert.equal(
-      [metadataUpdateOutcome, metadataDeleteOutcome].filter((result) => result.status === "fulfilled").length,
-      1,
-      "metadata update/delete race must have exactly one winner",
-    );
-    const metadataDeleteLoser = [metadataUpdateOutcome, metadataDeleteOutcome].find(
-      (result) => result.status === "rejected",
-    );
+    assert.equal([metadataUpdateOutcome, metadataDeleteOutcome].filter((result) => result.status === "fulfilled").length, 1, "metadata update/delete race must have exactly one winner");
+    const metadataDeleteLoser = [metadataUpdateOutcome, metadataDeleteOutcome].find((result) => result.status === "rejected");
     assert.ok(metadataDeleteLoser);
     assert.equal(metadataDeleteLoser.reason?.name, "ConcurrencyError");
 
     const tamperStore = await createStore();
     const tamperRecord = await tamperStore.save(metadataRecord("meta.tamper"));
-    await pool.execute(
-      `UPDATE \`${tamperStore.tableName}\` SET snapshot_json = ?
-       WHERE object_type_id = ? AND object_type_version = ?`,
-      [validEmptyEnvelope, tamperRecord.objectTypeId, tamperRecord.objectTypeVersion],
-    );
-    await assert.rejects(
-      () => tamperStore.get(tamperRecord.objectTypeId, tamperRecord.objectTypeVersion),
-      /snapshot objectType must be an object record/,
-    );
+    await pool.execute(`UPDATE \`${tamperStore.tableName}\` SET snapshot_json = ? WHERE object_type_id = ? AND object_type_version = ?`, [validEmptyEnvelope, tamperRecord.objectTypeId, tamperRecord.objectTypeVersion]);
+    await assert.rejects(() => tamperStore.get(tamperRecord.objectTypeId, tamperRecord.objectTypeVersion), /snapshot objectType must be an object record/);
   } finally {
     for (const tableName of tables) {
       await pool.query(`DROP TABLE IF EXISTS \`${tableName}\``);

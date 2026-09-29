@@ -201,15 +201,31 @@ test("metadata persistence boundaries fail before reaching MySQL", async () => {
 });
 
 test("batch transactions retry transient lock failures by default and remain configurable", async () => {
-  const calls = [];
+  const nativeOptions = [];
+  let failuresRemaining = DEFAULT_MYSQL_TRANSACTION_RETRIES;
   const connection = {
-    async execute() { return [{ affectedRows: 1 }, undefined]; },
-    async query() { return [[], undefined]; },
+    async query() {
+      return { rows: [], fields: [], affectedRows: 0, insertId: 0, serverStatus: 0, warningCount: 0 };
+    },
+    async prepare() {
+      return {
+        async execute() {
+          return { rows: [], fields: [], affectedRows: 1, insertId: 0, serverStatus: 0, warningCount: 0 };
+        },
+        async close() {},
+      };
+    },
   };
   const pool = {
     async withTransaction(work, options) {
-      calls.push(options);
-      return work(connection, 0);
+      nativeOptions.push(options);
+      if (failuresRemaining > 0) {
+        failuresRemaining -= 1;
+        const error = new Error("deadlock");
+        error.code = 1213;
+        throw error;
+      }
+      return work(connection);
     },
   };
   const snapshot = {
@@ -223,10 +239,15 @@ test("batch transactions retry transient lock failures by default and remain con
 
   const defaults = new MySqlStorageAdapter(pool);
   await defaults.saveBatch([{ kind: "insert", snapshot }]);
-  assert.equal(calls[0].maxRetries, DEFAULT_MYSQL_TRANSACTION_RETRIES);
+  assert.equal(nativeOptions.length, DEFAULT_MYSQL_TRANSACTION_RETRIES + 1);
+  assert.ok(nativeOptions.every((options) => !("maxRetries" in options)));
+  assert.ok(nativeOptions.every((options) => !("retryDelayMs" in options)));
 
+  nativeOptions.length = 0;
+  failuresRemaining = 3;
   const configured = new MySqlStorageAdapter(pool, { transaction: { maxRetries: 5, retryDelayMs: 0 } });
   await configured.saveBatch([{ kind: "insert", snapshot: { ...snapshot, id: "b" } }]);
-  assert.equal(calls[1].maxRetries, 5);
-  assert.equal(calls[1].retryDelayMs, 0);
+  assert.equal(nativeOptions.length, 4);
+  assert.ok(nativeOptions.every((options) => !("maxRetries" in options)));
+  assert.ok(nativeOptions.every((options) => !("retryDelayMs" in options)));
 });

@@ -1,7 +1,7 @@
 {
   "name": "@nublox/metaobject-storage-mysql",
-  "version": "1.0.0",
-  "description": "Release-qualified MySQL StorageAdapter, MetadataStore, safe query pushdown and versioned schema migrations for @nublox/metaobject.",
+  "version": "2.0.0",
+  "description": "Release-qualified MySQL StorageAdapter, MetadataStore, safe query pushdown and versioned schema migrations for @nublox/metaobject, powered by NuBloxSQL.",
   "author": "Stephen J T Spittal",
   "type": "module",
   "sideEffects": false,
@@ -12,27 +12,12 @@
     "directory": "packages/storage-mysql"
   },
   "homepage": "https://github.com/NuBlox/metaobject/tree/main/packages/storage-mysql#readme",
-  "bugs": {
-    "url": "https://github.com/NuBlox/metaobject/issues"
-  },
-  "publishConfig": {
-    "access": "public",
-    "tag": "latest"
-  },
+  "bugs": { "url": "https://github.com/NuBlox/metaobject/issues" },
+  "publishConfig": { "access": "public", "tag": "latest" },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE",
-    "NOTICE"
-  ],
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json",
@@ -51,14 +36,12 @@
     "release:check:live": "npm run release:check && npm run test:live"
   },
   "dependencies": {
-    "@nublox/metaobject": "1.0.0",
-    "@nublox/mysql": "3.1.0-rc.1"
+    "@nublox/metaobject": "^1.1.1",
+    "nubloxsql": "1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.8.3"
   },
-  "engines": {
-    "node": ">=22"
-  }
+  "engines": { "node": ">=22" }
 }

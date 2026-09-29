@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPool } from "@nublox/mysql/promise";
+import NuBloxSQL from "nubloxsql";
 import { normalizeObjectType } from "@nublox/metaobject";
 import { MySqlMetadataStore, MySqlStorageAdapter } from "../dist/index.js";
 
+const { createPool } = NuBloxSQL.mysql;
 const configured = Boolean(process.env.MYSQL_HOST);
 
 function name(suffix) {
@@ -46,10 +47,8 @@ test("M79 MySQL identities match JavaScript case and trailing-space equality", {
     user: process.env.MYSQL_USER ?? "root",
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
+    ssl: "disable",
     connectionLimit: 6,
-    timezone: "Z",
-    supportBigNumbers: true,
-    bigNumberStrings: true,
   });
 
   const objectTable = name("objects");
