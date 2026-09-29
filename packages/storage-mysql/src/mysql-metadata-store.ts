@@ -1,4 +1,3 @@
-import type * as nativeMysql from "@nublox/mysql";
 import {
   ConcurrencyError,
   MetadataError,
@@ -22,6 +21,7 @@ import {
   type MySqlExecutor,
   type MySqlPoolExecutor,
   type MySqlCommandResult,
+  type NativeMySqlPool,
 } from "./nublox-mysql-runtime.js";
 import {
   DEFAULT_MYSQL_METADATA_TABLE,
@@ -49,12 +49,7 @@ interface MetadataStateRow extends Record<string, unknown> {
 
 export interface MySqlMetadataStoreOptions {
   readonly tableName?: string;
-  /** Schema migration ledger/locking configuration used by initialize(). */
   readonly migrations?: MySqlSchemaMigrationOptions;
-  /**
-   * Native NuBlox MySQL transaction options plus MetaObject retry policy.
-   * Transient deadlock/lock-timeout retries default to 2 unless overridden.
-   */
   readonly transaction?: MetaObjectMySqlTransactionOptions;
 }
 
@@ -95,9 +90,7 @@ function validateExpectedRevision(value: unknown, incrementing: boolean): number
     throw new MetadataError("Expected metadata revision must be a non-negative safe integer.");
   }
   if (incrementing && (value as number) >= Number.MAX_SAFE_INTEGER) {
-    throw new MetadataError(
-      "Expected metadata revision cannot be incremented without exceeding JavaScript safe-integer range.",
-    );
+    throw new MetadataError("Expected metadata revision cannot be incremented without exceeding JavaScript safe-integer range.");
   }
   return value as number;
 }
@@ -108,23 +101,15 @@ function validateSnapshotShape(
   objectTypeVersion: number,
 ): asserts snapshot is NormalizedMetadataSnapshot {
   if (!isRecord(snapshot)) throw new MetadataError("Metadata snapshot must be an object record.");
-  if (!isRecord(snapshot.objectType)) {
-    throw new MetadataError("Metadata snapshot objectType must be an object record.");
-  }
+  if (!isRecord(snapshot.objectType)) throw new MetadataError("Metadata snapshot objectType must be an object record.");
   if (snapshot.objectType.objectTypeId !== objectTypeId) {
-    throw new MetadataError(
-      `Metadata snapshot objectTypeId '${String(snapshot.objectType.objectTypeId)}' does not match record '${objectTypeId}'.`,
-    );
+    throw new MetadataError(`Metadata snapshot objectTypeId '${String(snapshot.objectType.objectTypeId)}' does not match record '${objectTypeId}'.`);
   }
   if (snapshot.objectType.version !== objectTypeVersion) {
-    throw new MetadataError(
-      `Metadata snapshot version '${String(snapshot.objectType.version)}' does not match record version ${objectTypeVersion}.`,
-    );
+    throw new MetadataError(`Metadata snapshot version '${String(snapshot.objectType.version)}' does not match record version ${objectTypeVersion}.`);
   }
   for (const collection of SNAPSHOT_COLLECTIONS) {
-    if (!Array.isArray(snapshot[collection])) {
-      throw new MetadataError(`Metadata snapshot ${collection} must be an array.`);
-    }
+    if (!Array.isArray(snapshot[collection])) throw new MetadataError(`Metadata snapshot ${collection} must be an array.`);
   }
 }
 
@@ -143,9 +128,7 @@ function validateMetadataRecord(record: MetadataRecord): void {
 
 function rowToRecord(row: MetadataRow): MetadataRecord {
   const objectTypeId = validateMetadataObjectTypeId(String(row.object_type_id));
-  const objectTypeVersion = validateMetadataObjectTypeVersion(
-    toSafeInteger(row.object_type_version, "metadata object type version"),
-  );
+  const objectTypeVersion = validateMetadataObjectTypeVersion(toSafeInteger(row.object_type_version, "metadata object type version"));
   const snapshot = decodeRecord(row.snapshot_json);
   validateSnapshotShape(snapshot, objectTypeId, objectTypeVersion);
   return {
@@ -160,29 +143,24 @@ function rowToRecord(row: MetadataRow): MetadataRecord {
 }
 
 export class MySqlMetadataStore implements MetadataStore {
-  readonly #nativePool: nativeMysql.Pool;
+  readonly #nativePool: NativeMySqlPool;
   readonly #pool: MySqlPoolExecutor;
   readonly #tableName: string;
   readonly #table: string;
   readonly #migrationOptions: MySqlSchemaMigrationOptions;
   readonly #transactionOptions: MetaObjectMySqlTransactionOptions;
 
-  constructor(pool: nativeMysql.Pool, options: MySqlMetadataStoreOptions = {}) {
+  constructor(pool: NativeMySqlPool, options: MySqlMetadataStoreOptions = {}) {
     this.#nativePool = pool;
     this.#pool = adaptMySqlPool(pool);
     this.#tableName = validateMetadataTableName(options.tableName ?? DEFAULT_MYSQL_METADATA_TABLE);
     this.#table = quoteSqlIdentifier(this.#tableName);
     this.#migrationOptions = options.migrations ?? {};
     const transaction = options.transaction ?? {};
-    this.#transactionOptions = {
-      ...transaction,
-      maxRetries: transaction.maxRetries ?? DEFAULT_MYSQL_TRANSACTION_RETRIES,
-    };
+    this.#transactionOptions = { ...transaction, maxRetries: transaction.maxRetries ?? DEFAULT_MYSQL_TRANSACTION_RETRIES };
   }
 
-  get tableName(): string {
-    return this.#tableName;
-  }
+  get tableName(): string { return this.#tableName; }
 
   async initialize(): Promise<void> {
     await migrateMySqlMetadataSchema(this.#nativePool, this.#tableName, this.#migrationOptions);
@@ -244,12 +222,9 @@ export class MySqlMetadataStore implements MetadataStore {
       seen.add(key);
     }
     if (writes.length === 0) return [];
-
     return this.#pool.withTransaction(async (connection) => {
       const results: MetadataRecord[] = [];
-      for (const write of writes) {
-        results.push(await this.#saveLocked(connection, write.record, write.expectedRevision));
-      }
+      for (const write of writes) results.push(await this.#saveLocked(connection, write.record, write.expectedRevision));
       return results;
     }, this.#transactionOptions);
   }
@@ -258,15 +233,12 @@ export class MySqlMetadataStore implements MetadataStore {
     validateMetadataObjectTypeId(objectTypeId);
     validateMetadataObjectTypeVersion(version);
     validateExpectedRevision(expectedRevision, false);
-
     await this.#pool.withTransaction(async (connection) => {
       const current = await this.#getStateForUpdate(connection, objectTypeId, version);
       if (!current) return;
       const actualRevision = toSafeInteger(current.revision, "metadata revision");
       if (actualRevision !== expectedRevision) {
-        throw new ConcurrencyError(
-          `Metadata concurrency conflict for '${metadataKey(objectTypeId, version)}': expected revision ${expectedRevision}, found ${actualRevision}.`,
-        );
+        throw new ConcurrencyError(`Metadata concurrency conflict for '${metadataKey(objectTypeId, version)}': expected revision ${expectedRevision}, found ${actualRevision}.`);
       }
       const [result] = await connection.execute<MySqlCommandResult>(
         `DELETE FROM ${this.#table}
@@ -274,21 +246,14 @@ export class MySqlMetadataStore implements MetadataStore {
         [objectTypeId, version, expectedRevision],
       );
       if (Number(result.affectedRows) !== 1) {
-        throw new ConcurrencyError(
-          `Metadata '${metadataKey(objectTypeId, version)}' changed while delete was committing.`,
-        );
+        throw new ConcurrencyError(`Metadata '${metadataKey(objectTypeId, version)}' changed while delete was committing.`);
       }
     }, this.#transactionOptions);
   }
 
-  async #saveLocked(
-    executor: MySqlExecutor,
-    record: MetadataRecord,
-    expectedRevision?: number,
-  ): Promise<MetadataRecord> {
+  async #saveLocked(executor: MySqlExecutor, record: MetadataRecord, expectedRevision?: number): Promise<MetadataRecord> {
     const key = metadataKey(record.objectTypeId, record.objectTypeVersion);
     const current = await this.#getStateForUpdate(executor, record.objectTypeId, record.objectTypeVersion);
-
     if (!current) {
       if (expectedRevision !== undefined && expectedRevision !== 0) {
         throw new ConcurrencyError(`Metadata '${key}' does not exist at expected revision ${expectedRevision}.`);
@@ -299,20 +264,11 @@ export class MySqlMetadataStore implements MetadataStore {
           `INSERT INTO ${this.#table}
             (object_type_id, object_type_version, status, revision, snapshot_json, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            inserted.objectTypeId,
-            inserted.objectTypeVersion,
-            inserted.status,
-            inserted.revision,
-            encodeRecord(inserted.snapshot as unknown as Readonly<Record<string, unknown>>),
-            inserted.createdAt,
-            inserted.updatedAt,
-          ],
+          [inserted.objectTypeId, inserted.objectTypeVersion, inserted.status, inserted.revision,
+            encodeRecord(inserted.snapshot as unknown as Readonly<Record<string, unknown>>), inserted.createdAt, inserted.updatedAt],
         );
       } catch (error) {
-        if (isDuplicateEntryError(error)) {
-          throw new ConcurrencyError(`Metadata '${key}' was created concurrently.`);
-        }
+        if (isDuplicateEntryError(error)) throw new ConcurrencyError(`Metadata '${key}' was created concurrently.`);
         throw error;
       }
       return structuredClone(inserted);
@@ -320,12 +276,9 @@ export class MySqlMetadataStore implements MetadataStore {
 
     const actualRevision = toSafeInteger(current.revision, "metadata revision");
     if (expectedRevision === undefined || actualRevision !== expectedRevision) {
-      throw new ConcurrencyError(
-        `Metadata concurrency conflict for '${key}': expected revision ${expectedRevision ?? "<missing>"}, found ${actualRevision}.`,
-      );
+      throw new ConcurrencyError(`Metadata concurrency conflict for '${key}': expected revision ${expectedRevision ?? "<missing>"}, found ${actualRevision}.`);
     }
     validateExpectedRevision(actualRevision, true);
-
     const updated: MetadataRecord = {
       ...record,
       revision: actualRevision + 1,
@@ -335,27 +288,14 @@ export class MySqlMetadataStore implements MetadataStore {
       `UPDATE ${this.#table}
        SET status = ?, revision = ?, snapshot_json = ?, updated_at = ?
        WHERE object_type_id = ? AND object_type_version = ? AND revision = ?`,
-      [
-        updated.status,
-        updated.revision,
-        encodeRecord(updated.snapshot as unknown as Readonly<Record<string, unknown>>),
-        updated.updatedAt,
-        updated.objectTypeId,
-        updated.objectTypeVersion,
-        actualRevision,
-      ],
+      [updated.status, updated.revision, encodeRecord(updated.snapshot as unknown as Readonly<Record<string, unknown>>),
+        updated.updatedAt, updated.objectTypeId, updated.objectTypeVersion, actualRevision],
     );
-    if (Number(result.affectedRows) !== 1) {
-      throw new ConcurrencyError(`Metadata '${key}' changed while update was committing.`);
-    }
+    if (Number(result.affectedRows) !== 1) throw new ConcurrencyError(`Metadata '${key}' changed while update was committing.`);
     return structuredClone(updated);
   }
 
-  async #getStateForUpdate(
-    executor: MySqlExecutor,
-    objectTypeId: string,
-    version: number,
-  ): Promise<MetadataStateRow | null> {
+  async #getStateForUpdate(executor: MySqlExecutor, objectTypeId: string, version: number): Promise<MetadataStateRow | null> {
     const [rows] = await executor.execute<MetadataStateRow[]>(
       `SELECT revision, created_at
        FROM ${this.#table}
