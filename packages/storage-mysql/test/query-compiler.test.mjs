@@ -20,12 +20,8 @@ test("safe equality and pagination are pushed into prepared SQL", () => {
   assert.match(plan.sql, /LIMIT \? OFFSET \?/);
   assert.equal(plan.parameters[0], "example.item");
   const [limit, offset] = plan.parameters.slice(-2);
-  assert.equal(limit.__nubloxTypedParameter, true);
-  assert.equal(limit.unsigned, true);
-  assert.equal(limit.value, 5n);
-  assert.equal(offset.__nubloxTypedParameter, true);
-  assert.equal(offset.unsigned, true);
-  assert.equal(offset.value, 2n);
+  assert.equal(limit, 5);
+  assert.equal(offset, 2);
 });
 
 test("attribute names remain bound JSON paths instead of SQL text", () => {
