@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPool } from "@nublox/mysql/promise";
+import NuBloxSQL from "nubloxsql";
 import {
   normalizeObjectType,
   runMetadataStoreConformance,
@@ -8,6 +8,7 @@ import {
 } from "@nublox/metaobject";
 import { MySqlMetadataStore, MySqlStorageAdapter } from "../dist/index.js";
 
+const { createPool } = NuBloxSQL.mysql;
 const configured = Boolean(process.env.MYSQL_HOST);
 
 function snapshot(id, value = 1) {
@@ -47,9 +48,6 @@ test("MySQL persistence satisfies MetaObject conformance and hardening", { skip:
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
     connectionLimit: 8,
-    timezone: "Z",
-    supportBigNumbers: true,
-    bigNumberStrings: true,
   });
   const tables = [];
   let sequence = 0;
