@@ -1,9 +1,9 @@
-import mysqlPromise from "@nublox/mysql/promise";
-import type { ObjectQuery, QueryFilter } from "@nublox/metaobject";
-import {
-  MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
-  type MySqlQueryPushdownCapabilities,
-} from "./query-capabilities.js";
+import type {
+  ObjectQuery,
+  QueryFilter,
+  QueryPushdownCapabilities,
+} from "@nublox/metaobject";
+import { MYSQL_QUERY_PUSHDOWN_CAPABILITIES } from "./query-capabilities.js";
 import { quoteSqlIdentifier } from "./schema.js";
 
 interface CompiledPredicate {
@@ -156,12 +156,8 @@ function safePageValue(value: number | undefined): boolean {
   return value === undefined || (Number.isSafeInteger(value) && value >= 0);
 }
 
-function uint64PageParameter(value: number) {
-  return mysqlPromise.param.uint64(value);
-}
-
 function advertisesFilter(
-  capabilities: MySqlQueryPushdownCapabilities,
+  capabilities: QueryPushdownCapabilities,
   filter: QueryFilter,
 ): boolean {
   return capabilities.filterOperators.includes(filter.operator);
@@ -170,7 +166,7 @@ function advertisesFilter(
 export function compileMySqlObjectQueryPlan(
   tableName: string,
   query: ObjectQuery,
-  capabilities: MySqlQueryPushdownCapabilities = MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
+  capabilities: QueryPushdownCapabilities = MYSQL_QUERY_PUSHDOWN_CAPABILITIES,
 ): MySqlObjectQueryPlan {
   const table = quoteSqlIdentifier(tableName);
   const pushedFilters: QueryFilter[] = [];
@@ -184,8 +180,6 @@ export function compileMySqlObjectQueryPlan(
       continue;
     }
 
-    // Capability declarations are advisory proof. The compiler still fails
-    // closed if no SQL translation exists for an advertised operator.
     const compiled = compileMySqlFilter(filter);
     if (!compiled) {
       residualFilters.push(filter);
@@ -209,13 +203,10 @@ export function compileMySqlObjectQueryPlan(
 
   if (paginationPushed && query.limit !== undefined) {
     sql += "\nLIMIT ? OFFSET ?";
-    parameters.push(
-      uint64PageParameter(query.limit),
-      uint64PageParameter(query.offset ?? 0),
-    );
+    parameters.push(query.limit, query.offset ?? 0);
   } else if (paginationPushed && query.offset !== undefined && query.offset > 0) {
     sql += "\nLIMIT 18446744073709551615 OFFSET ?";
-    parameters.push(uint64PageParameter(query.offset));
+    parameters.push(query.offset);
   }
 
   return {
