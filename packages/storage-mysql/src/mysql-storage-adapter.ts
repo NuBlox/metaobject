@@ -1,4 +1,3 @@
-import type * as nativeMysql from "@nublox/mysql";
 import {
   ConcurrencyError,
   MetadataError,
@@ -23,6 +22,7 @@ import {
   type MySqlExecutor,
   type MySqlPoolExecutor,
   type MySqlCommandResult,
+  type NativeMySqlPool,
 } from "./nublox-mysql-runtime.js";
 import { MYSQL_QUERY_PUSHDOWN_CAPABILITIES } from "./query-capabilities.js";
 import { compileMySqlObjectQueryPlan } from "./query-compiler.js";
@@ -47,12 +47,7 @@ interface VersionRow extends Record<string, unknown> {
 
 export interface MySqlStorageAdapterOptions {
   readonly tableName?: string;
-  /** Schema migration ledger/locking configuration used by initialize(). */
   readonly migrations?: MySqlSchemaMigrationOptions;
-  /**
-   * Native NuBlox MySQL transaction options plus MetaObject retry policy.
-   * Transient deadlock/lock-timeout retries default to 2 unless overridden.
-   */
   readonly transaction?: MetaObjectMySqlTransactionOptions;
 }
 
@@ -71,9 +66,7 @@ function validateObjectKeyPart(value: unknown, field: "type" | "id"): string {
     throw new MetadataError(`Object ${field} must be a non-empty string.`);
   }
   if (codePointLength(value) > MYSQL_OBJECT_KEY_MAX_LENGTH) {
-    throw new MetadataError(
-      `Object ${field} exceeds MySQL storage limit ${MYSQL_OBJECT_KEY_MAX_LENGTH} characters.`,
-    );
+    throw new MetadataError(`Object ${field} exceeds MySQL storage limit ${MYSQL_OBJECT_KEY_MAX_LENGTH} characters.`);
   }
   return value;
 }
@@ -85,9 +78,7 @@ function validateIdentity(identity: ObjectIdentity): void {
 
 function validateSchemaVersion(value: unknown): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > MYSQL_SCHEMA_VERSION_MAX) {
-    throw new MetadataError(
-      `Object schemaVersion must be an integer between 0 and ${MYSQL_SCHEMA_VERSION_MAX}.`,
-    );
+    throw new MetadataError(`Object schemaVersion must be an integer between 0 and ${MYSQL_SCHEMA_VERSION_MAX}.`);
   }
   return value as number;
 }
@@ -108,11 +99,7 @@ function validateSnapshot(snapshot: ObjectSnapshot): void {
   if (typeof snapshot.values !== "object" || snapshot.values === null || Array.isArray(snapshot.values)) {
     throw new MetadataError("Object snapshot values must be an object record.");
   }
-  if (
-    typeof snapshot.relationships !== "object"
-    || snapshot.relationships === null
-    || Array.isArray(snapshot.relationships)
-  ) {
+  if (typeof snapshot.relationships !== "object" || snapshot.relationships === null || Array.isArray(snapshot.relationships)) {
     throw new MetadataError("Object snapshot relationships must be an object record.");
   }
 }
@@ -156,24 +143,21 @@ function matches(value: unknown, filter: QueryFilter, query: ObjectQuery): boole
 
 export class MySqlStorageAdapter implements StorageAdapter {
   readonly queryPushdownCapabilities = MYSQL_QUERY_PUSHDOWN_CAPABILITIES;
-  readonly #nativePool: nativeMysql.Pool;
+  readonly #nativePool: NativeMySqlPool;
   readonly #pool: MySqlPoolExecutor;
   readonly #tableName: string;
   readonly #table: string;
   readonly #migrationOptions: MySqlSchemaMigrationOptions;
   readonly #transactionOptions: MetaObjectMySqlTransactionOptions;
 
-  constructor(pool: nativeMysql.Pool, options: MySqlStorageAdapterOptions = {}) {
+  constructor(pool: NativeMySqlPool, options: MySqlStorageAdapterOptions = {}) {
     this.#nativePool = pool;
     this.#pool = adaptMySqlPool(pool);
     this.#tableName = validateSqlIdentifier(options.tableName ?? DEFAULT_MYSQL_STORAGE_TABLE);
     this.#table = quoteSqlIdentifier(this.#tableName);
     this.#migrationOptions = options.migrations ?? {};
     const transaction = options.transaction ?? {};
-    this.#transactionOptions = {
-      ...transaction,
-      maxRetries: transaction.maxRetries ?? DEFAULT_MYSQL_TRANSACTION_RETRIES,
-    };
+    this.#transactionOptions = { ...transaction, maxRetries: transaction.maxRetries ?? DEFAULT_MYSQL_TRANSACTION_RETRIES };
   }
 
   get tableName(): string { return this.#tableName; }
@@ -224,9 +208,7 @@ export class MySqlStorageAdapter implements StorageAdapter {
     if (Number(result.affectedRows) > 0) return;
     const actualVersion = await this.#getVersion(this.#pool, identity);
     if (actualVersion === null) return;
-    throw new ConcurrencyError(
-      `Optimistic concurrency conflict for '${objectKey(identity)}': expected version ${expectedVersion}, found ${actualVersion}.`,
-    );
+    throw new ConcurrencyError(`Optimistic concurrency conflict for '${objectKey(identity)}': expected version ${expectedVersion}, found ${actualVersion}.`);
   }
 
   async get(identity: ObjectIdentity): Promise<ObjectSnapshot | null> {
@@ -246,16 +228,10 @@ export class MySqlStorageAdapter implements StorageAdapter {
     const plan = compileMySqlObjectQueryPlan(this.#tableName, query, this.queryPushdownCapabilities);
     const [rows] = await this.#pool.execute<SnapshotRow[]>(plan.sql, [...plan.parameters]);
     let results = rows.map(rowToSnapshot);
-    for (const filter of query.where ?? []) {
-      results = results.filter((item) => matches(item.values[filter.attribute], filter, query));
-    }
+    for (const filter of query.where ?? []) results = results.filter((item) => matches(item.values[filter.attribute], filter, query));
     for (const sort of [...(query.orderBy ?? [])].reverse()) {
       results.sort((left, right) => {
-        const result = compareStorageQueryScalar(
-          left.values[sort.attribute],
-          right.values[sort.attribute],
-          query.comparisonSemantics,
-        );
+        const result = compareStorageQueryScalar(left.values[sort.attribute], right.values[sort.attribute], query.comparisonSemantics);
         return sort.direction === "desc" ? -result : result;
       });
     }
@@ -292,9 +268,7 @@ export class MySqlStorageAdapter implements StorageAdapter {
     if (Number(result.affectedRows) > 0) return structuredClone(stored);
     const actualVersion = await this.#getVersion(executor, snapshot);
     if (actualVersion === null) throw new ConcurrencyError(`Object '${objectKey(snapshot)}' no longer exists.`);
-    throw new ConcurrencyError(
-      `Optimistic concurrency conflict for '${objectKey(snapshot)}': expected version ${expectedVersion}, found ${actualVersion}.`,
-    );
+    throw new ConcurrencyError(`Optimistic concurrency conflict for '${objectKey(snapshot)}': expected version ${expectedVersion}, found ${actualVersion}.`);
   }
 
   async #getVersion(executor: MySqlExecutor, identity: ObjectIdentity): Promise<number | null> {
