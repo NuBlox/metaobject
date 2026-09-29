@@ -1,3 +1,4 @@
+import { MetaObjectError } from "@nublox/metaobject";
 import type { mysql as native } from "nubloxsql";
 
 export type NativeMySqlPool = native.Pool;
@@ -48,6 +49,7 @@ const ROW_STATEMENTS = new Set(["SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN",
 const MYSQL_DUPLICATE_ENTRY = 1062;
 const MYSQL_LOCK_WAIT_TIMEOUT = 1205;
 const MYSQL_DEADLOCK = 1213;
+const NUBLOX_MYSQL_OPERATION_STATE = "NUBLOX_MYSQL_OPERATION_STATE";
 
 function statementKind(sql: string): string {
   const match = /^\s*([A-Za-z]+)/.exec(sql);
@@ -68,6 +70,14 @@ function tuple<T>(sql: string, result: native.QueryResult<Record<string, unknown
 
 function valuesPresent(values: readonly unknown[] | undefined): values is readonly unknown[] {
   return values !== undefined && values.length > 0;
+}
+
+function unwrapMetaObjectTransactionError(error: unknown): unknown {
+  if (typeof error !== "object" || error === null) return error;
+  if (!("code" in error) || (error as { readonly code?: unknown }).code !== NUBLOX_MYSQL_OPERATION_STATE) return error;
+  if (!("cause" in error)) return error;
+  const cause = (error as { readonly cause?: unknown }).cause;
+  return cause instanceof MetaObjectError ? cause : error;
 }
 
 async function executePrepared(
@@ -169,7 +179,8 @@ class PoolExecutor implements MySqlPoolExecutor {
           nativeOptions,
         );
       } catch (error) {
-        if (attempt >= maxRetries || !isTransientMySqlTransactionError(error)) throw error;
+        const normalizedError = unwrapMetaObjectTransactionError(error);
+        if (attempt >= maxRetries || !isTransientMySqlTransactionError(normalizedError)) throw normalizedError;
         if (retryDelayMs > 0) {
           await new Promise<void>((resolve) => setTimeout(resolve, retryDelayMs));
         }
