@@ -15,6 +15,7 @@ export * from "./metadata/memory-metadata-store.js";
 export * from "./metadata/metadata-catalog.js";
 export * from "./metadata/metadata-store.js";
 export * from "./metadata/persistence-model.js";
+export * from "./platform/metaobject-platform.js";
 export * from "./modules/memory-module-store.js";
 export * from "./modules/memory-runtime-deployment-store.js";
 export * from "./modules/memory-runtime-profile-store.js";
