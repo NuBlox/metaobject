@@ -18,7 +18,7 @@ const person = runtime.create(Person, {
   age: 41,
 });
 
-const name: string = person.get("name");
+const name: string | undefined = person.get("name");
 const age: number | undefined = person.get("age");
 void name;
 void age;
