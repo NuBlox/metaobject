@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type mysql from "@nublox/mysql";
+import type * as nativeMysql from "@nublox/mysql";
 import { MetadataError } from "@nublox/metaobject";
 import {
   DEFAULT_MYSQL_METADATA_TABLE,
@@ -10,6 +10,11 @@ import {
   createMetadataV3MigrationSql,
   validateMetadataTableName,
 } from "./metadata-schema.js";
+import {
+  adaptMySqlPool,
+  type MySqlConnectionExecutor,
+  type MySqlPoolExecutor,
+} from "./nublox-mysql-runtime.js";
 import {
   DEFAULT_MYSQL_STORAGE_TABLE,
   MYSQL_IDENTITY_COLLATION,
@@ -92,16 +97,16 @@ interface MigrationDefinition {
   readonly version: number;
   readonly id: string;
   readonly checksumSource: string;
-  isSatisfied(connection: mysql.PromiseConnection, tableName: string): Promise<boolean>;
-  apply(connection: mysql.PromiseConnection, tableName: string): Promise<void>;
-  diagnose(connection: mysql.PromiseConnection, tableName: string): Promise<readonly string[]>;
+  isSatisfied(connection: MySqlConnectionExecutor, tableName: string): Promise<boolean>;
+  apply(connection: MySqlConnectionExecutor, tableName: string): Promise<void>;
+  diagnose(connection: MySqlConnectionExecutor, tableName: string): Promise<readonly string[]>;
 }
 
 interface MigrationPlan {
   readonly component: MySqlSchemaComponent;
   readonly currentVersion: number;
   readonly migrations: readonly MigrationDefinition[];
-  diagnoseFinal(connection: mysql.PromiseConnection, tableName: string): Promise<readonly string[]>;
+  diagnoseFinal(connection: MySqlConnectionExecutor, tableName: string): Promise<readonly string[]>;
 }
 
 const STORAGE_V1_COLUMNS: readonly ColumnSpec[] = [
@@ -218,7 +223,7 @@ function sameColumns(actual: readonly string[], expected: readonly string[]): bo
   return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
 }
 
-async function tableExists(connection: mysql.PromiseConnection, tableName: string): Promise<boolean> {
+async function tableExists(connection: MySqlConnectionExecutor, tableName: string): Promise<boolean> {
   const [rows] = await connection.execute<Array<Record<string, unknown>>>(
     `SELECT TABLE_NAME
        FROM information_schema.TABLES
@@ -229,7 +234,7 @@ async function tableExists(connection: mysql.PromiseConnection, tableName: strin
 }
 
 async function requiredTableIssues(
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   tableName: string,
   columns: readonly ColumnSpec[],
   indexes: readonly IndexSpec[],
@@ -320,7 +325,7 @@ async function requiredTableIssues(
 }
 
 async function indexExists(
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   tableName: string,
   indexName: string,
 ): Promise<boolean> {
@@ -335,37 +340,37 @@ async function indexExists(
 }
 
 const storageV1Issues = (
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   tableName: string,
 ): Promise<readonly string[]> =>
   requiredTableIssues(connection, tableName, STORAGE_V1_COLUMNS, STORAGE_V1_INDEXES);
 
 const storageV2Issues = (
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   tableName: string,
 ): Promise<readonly string[]> =>
   requiredTableIssues(connection, tableName, STORAGE_V1_COLUMNS, STORAGE_V2_INDEXES);
 
 const storageV3Issues = (
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   tableName: string,
 ): Promise<readonly string[]> =>
   requiredTableIssues(connection, tableName, STORAGE_V3_COLUMNS, STORAGE_V2_INDEXES);
 
 const metadataV1Issues = (
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   tableName: string,
 ): Promise<readonly string[]> =>
   requiredTableIssues(connection, tableName, METADATA_V1_COLUMNS, METADATA_V1_INDEXES);
 
 const metadataV2Issues = (
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   tableName: string,
 ): Promise<readonly string[]> =>
   requiredTableIssues(connection, tableName, METADATA_V1_COLUMNS, METADATA_V2_INDEXES);
 
 const metadataV3Issues = (
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   tableName: string,
 ): Promise<readonly string[]> =>
   requiredTableIssues(connection, tableName, METADATA_V3_COLUMNS, METADATA_V2_INDEXES);
@@ -489,7 +494,7 @@ function validateOptions(options: MySqlSchemaMigrationOptions): {
 }
 
 async function verifyLedgerTable(
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   migrationTableName: string,
 ): Promise<void> {
   const issues = await requiredTableIssues(
@@ -505,7 +510,7 @@ async function verifyLedgerTable(
   }
 }
 
-async function databaseName(connection: mysql.PromiseConnection): Promise<string> {
+async function databaseName(connection: MySqlConnectionExecutor): Promise<string> {
   const [rows] = await connection.query<DatabaseRow[]>("SELECT DATABASE() AS database_name");
   const value = rows[0]?.database_name;
   if (typeof value !== "string" || value.length === 0) {
@@ -528,11 +533,11 @@ function lockValue(value: unknown): number | null {
 }
 
 async function acquireMigrationLock(
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   lockName: string,
   timeoutSeconds: number,
 ): Promise<void> {
-  const [rows] = await connection.query<LockRow[]>(
+  const [rows] = await connection.execute<LockRow[]>(
     "SELECT GET_LOCK(?, ?) AS acquired",
     [lockName, timeoutSeconds],
   );
@@ -544,11 +549,11 @@ async function acquireMigrationLock(
 }
 
 async function releaseMigrationLock(
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   lockName: string,
 ): Promise<boolean> {
   try {
-    const [rows] = await connection.query<LockRow[]>(
+    const [rows] = await connection.execute<LockRow[]>(
       "SELECT RELEASE_LOCK(?) AS released",
       [lockName],
     );
@@ -559,7 +564,7 @@ async function releaseMigrationLock(
 }
 
 async function readLedger(
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   migrationTableName: string,
   component: MySqlSchemaComponent,
   targetTable: string,
@@ -609,7 +614,7 @@ function validateLedger(plan: MigrationPlan, rows: readonly MigrationRow[]): Set
 }
 
 async function recordMigration(
-  connection: mysql.PromiseConnection,
+  connection: MySqlConnectionExecutor,
   migrationTableName: string,
   plan: MigrationPlan,
   targetTable: string,
@@ -631,7 +636,7 @@ async function recordMigration(
 }
 
 async function migratePlan(
-  pool: mysql.PromisePool,
+  pool: MySqlPoolExecutor,
   plan: MigrationPlan,
   targetTable: string,
   options: MySqlSchemaMigrationOptions,
@@ -710,17 +715,17 @@ async function migratePlan(
 }
 
 export function migrateMySqlStorageSchema(
-  pool: mysql.PromisePool,
+  pool: nativeMysql.Pool,
   tableName = DEFAULT_MYSQL_STORAGE_TABLE,
   options: MySqlSchemaMigrationOptions = {},
 ): Promise<MySqlSchemaMigrationReport> {
-  return migratePlan(pool, STORAGE_PLAN, validateSqlIdentifier(tableName), options);
+  return migratePlan(adaptMySqlPool(pool), STORAGE_PLAN, validateSqlIdentifier(tableName), options);
 }
 
 export function migrateMySqlMetadataSchema(
-  pool: mysql.PromisePool,
+  pool: nativeMysql.Pool,
   tableName = DEFAULT_MYSQL_METADATA_TABLE,
   options: MySqlSchemaMigrationOptions = {},
 ): Promise<MySqlSchemaMigrationReport> {
-  return migratePlan(pool, METADATA_PLAN, validateMetadataTableName(tableName), options);
+  return migratePlan(adaptMySqlPool(pool), METADATA_PLAN, validateMetadataTableName(tableName), options);
 }
