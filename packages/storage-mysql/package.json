@@ -15,24 +15,11 @@
   "bugs": {
     "url": "https://github.com/NuBlox/metaobject/issues"
   },
-  "publishConfig": {
-    "access": "public",
-    "tag": "latest"
-  },
+  "publishConfig": { "access": "public", "tag": "latest" },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE",
-    "NOTICE"
-  ],
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json",
@@ -52,13 +39,11 @@
   },
   "dependencies": {
     "@nublox/metaobject": "^1.1.1",
-    "@nublox/mysql": "1.0.0"
+    "nubloxsql": "github:NuBlox/NuBloxSQL#bc0a77b3d4fc645d8b8a7ab4aa723d2f6b320336"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.8.3"
   },
-  "engines": {
-    "node": ">=22"
-  }
+  "engines": { "node": ">=22" }
 }
