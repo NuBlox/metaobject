@@ -4,6 +4,7 @@ import type { mysql as native } from "nubloxsql";
 export type NativeMySqlPool = native.Pool;
 export type NativeMySqlConnection = native.Connection;
 export type MySqlField = native.Field;
+type NativePreparedStatement = Awaited<ReturnType<NativeMySqlConnection["prepare"]>>;
 
 export interface MetaObjectMySqlTransactionOptions extends native.TransactionOptions {
   /** Number of retries after the initial transaction attempt for transient MySQL locking failures. */
@@ -96,10 +97,40 @@ async function executePrepared(
 class ConnectionExecutor implements MySqlConnectionExecutor {
   readonly #connection: native.Connection;
   readonly #owner: native.Pool | undefined;
+  readonly #preparedStatements: Map<string, NativePreparedStatement> | undefined;
 
-  constructor(connection: native.Connection, owner?: native.Pool) {
+  constructor(connection: native.Connection, owner?: native.Pool, cachePreparedStatements = false) {
     this.#connection = connection;
     this.#owner = owner;
+    this.#preparedStatements = cachePreparedStatements ? new Map() : undefined;
+  }
+
+  async #executePreparedCached(
+    sql: string,
+    values: readonly unknown[],
+  ): Promise<native.QueryResult<Record<string, unknown>>> {
+    if (!this.#preparedStatements) return executePrepared(this.#connection, sql, values);
+    let statement = this.#preparedStatements.get(sql);
+    if (!statement) {
+      statement = await this.#connection.prepare(sql);
+      this.#preparedStatements.set(sql, statement);
+    }
+    return statement.execute<Record<string, unknown>>(values);
+  }
+
+  async closePreparedStatements(): Promise<void> {
+    if (!this.#preparedStatements) return;
+    const statements = [...this.#preparedStatements.values()];
+    this.#preparedStatements.clear();
+    let firstError: unknown;
+    for (const statement of statements) {
+      try {
+        await statement.close();
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstError !== undefined) throw firstError;
   }
 
   async query<T = MySqlCommandResult>(
@@ -107,7 +138,7 @@ class ConnectionExecutor implements MySqlConnectionExecutor {
     values?: readonly unknown[],
   ): Promise<MySqlQueryTuple<T>> {
     const result = valuesPresent(values)
-      ? await executePrepared(this.#connection, sql, values)
+      ? await this.#executePreparedCached(sql, values)
       : await this.#connection.query<Record<string, unknown>>(sql);
     return tuple<T>(sql, result);
   }
@@ -116,7 +147,7 @@ class ConnectionExecutor implements MySqlConnectionExecutor {
     sql: string,
     values: readonly unknown[] = [],
   ): Promise<MySqlQueryTuple<T>> {
-    const result = await executePrepared(this.#connection, sql, values);
+    const result = await this.#executePreparedCached(sql, values);
     return tuple<T>(sql, result);
   }
 
@@ -174,10 +205,22 @@ class PoolExecutor implements MySqlPoolExecutor {
 
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.#pool.withTransaction(
-          (connection: native.Connection) => fn(new ConnectionExecutor(connection)),
-          nativeOptions,
-        );
+        return await this.#pool.withTransaction(async (connection: native.Connection) => {
+          const executor = new ConnectionExecutor(connection, undefined, true);
+          let callbackError: unknown;
+          try {
+            return await fn(executor);
+          } catch (error) {
+            callbackError = error;
+            throw error;
+          } finally {
+            try {
+              await executor.closePreparedStatements();
+            } catch (closeError) {
+              if (callbackError === undefined) throw closeError;
+            }
+          }
+        }, nativeOptions);
       } catch (error) {
         const normalizedError = unwrapMetaObjectTransactionError(error);
         if (attempt >= maxRetries || !isTransientMySqlTransactionError(normalizedError)) throw normalizedError;
