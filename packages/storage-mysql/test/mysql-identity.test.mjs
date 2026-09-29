@@ -47,6 +47,7 @@ test("M79 MySQL identities match JavaScript case and trailing-space equality", {
     user: process.env.MYSQL_USER ?? "root",
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
+    ssl: "disable",
     connectionLimit: 6,
   });
 
