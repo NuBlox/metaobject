@@ -52,7 +52,7 @@
   },
   "dependencies": {
     "@nublox/metaobject": "^1.1.1",
-    "nubloxsql": "1.0.0"
+    "@nublox/mysql": "1.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
