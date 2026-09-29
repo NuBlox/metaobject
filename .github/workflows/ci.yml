@@ -122,30 +122,6 @@ jobs:
       - name: Typecheck, unit test and verify package
         run: npm run check
 
-      - name: Instrument race error diagnostic
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = 'test/mysql-conformance.test.mjs';
-          const source = fs.readFileSync(path, 'utf8');
-          const target = 'assert.equal(raceRejected[0].reason?.name, "ConcurrencyError");';
-          const diagnostic = `const raceReason = raceRejected[0].reason;
-              console.error("RACE_ERROR_DIAGNOSTIC", JSON.stringify({
-                name: raceReason?.name,
-                message: raceReason?.message,
-                code: raceReason?.code,
-                category: raceReason?.category,
-                retryable: raceReason?.retryable,
-                causeName: raceReason?.cause?.name,
-                causeMessage: raceReason?.cause?.message,
-                causeCode: raceReason?.cause?.code,
-              }));
-              ${target}`;
-          if (!source.includes(target)) throw new Error('Race assertion target not found');
-          fs.writeFileSync(path, source.replace(target, diagnostic));
-          NODE
-
       - name: Run MetaObject persistence conformance against MySQL
         run: npm run test:integration
 
