@@ -4,7 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const temp = mkdtempSync(join(tmpdir(), "metaobject-storage-mysql-consumer-"));
-const expectedMetaObjectVersion = "1.0.0";
+
+function assertCompatibleMetaObjectVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(String(version));
+  if (!match) throw new Error(`Unable to parse installed @nublox/metaobject version '${String(version)}'.`);
+  const [, major, minor, patch] = match.map(Number);
+  if (major !== 1 || minor < 1 || (minor === 1 && patch < 1)) {
+    throw new Error(`Expected clean consumer to resolve compatible @nublox/metaobject >=1.1.1 <2, got ${version}.`);
+  }
+}
 
 try {
   const packOutput = execFileSync("npm", ["pack", "--json", "--pack-destination", temp], {
@@ -20,9 +28,6 @@ try {
     type: "module",
   }, null, 2));
 
-  // The adapter is a Node.js package and @nublox/mysql exposes Node Buffer types.
-  // Model a real strict TypeScript Node consumer by installing the Node declarations
-  // explicitly instead of hiding declaration errors with skipLibCheck.
   execFileSync(
     "npm",
     [
@@ -39,10 +44,14 @@ try {
     join(temp, "node_modules", "@nublox", "metaobject", "package.json"),
     "utf8",
   ));
-  if (installedMetaObject.version !== expectedMetaObjectVersion) {
-    throw new Error(
-      `Expected clean consumer to resolve @nublox/metaobject@${expectedMetaObjectVersion}, got ${installedMetaObject.version}.`,
-    );
+  assertCompatibleMetaObjectVersion(installedMetaObject.version);
+
+  const installedNuBloxSql = JSON.parse(readFileSync(
+    join(temp, "node_modules", "nubloxsql", "package.json"),
+    "utf8",
+  ));
+  if (installedNuBloxSql.name !== "nubloxsql") {
+    throw new Error("Expected clean consumer to resolve the single-entry nubloxsql package.");
   }
 
   writeFileSync(join(temp, "consumer.mjs"), [
@@ -109,17 +118,11 @@ try {
     include: ["consumer.ts"],
   }, null, 2));
 
-  execFileSync(process.execPath, [join(temp, "consumer.mjs")], {
-    cwd: temp,
-    stdio: "inherit",
-  });
-  execFileSync(join(temp, "node_modules", ".bin", "tsc"), ["-p", "tsconfig.json"], {
-    cwd: temp,
-    stdio: "inherit",
-  });
+  execFileSync(process.execPath, [join(temp, "consumer.mjs")], { cwd: temp, stdio: "inherit" });
+  execFileSync(join(temp, "node_modules", ".bin", "tsc"), ["-p", "tsconfig.json"], { cwd: temp, stdio: "inherit" });
 
   console.log(
-    `Verified clean external ESM and TypeScript consumer installation for @nublox/metaobject-storage-mysql against @nublox/metaobject@${expectedMetaObjectVersion}.`,
+    `Verified clean external ESM and TypeScript consumer installation for @nublox/metaobject-storage-mysql against @nublox/metaobject@${installedMetaObject.version} and ${installedNuBloxSql.name}@${installedNuBloxSql.version}.`,
   );
 } finally {
   rmSync(temp, { recursive: true, force: true });
