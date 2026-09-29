@@ -6,6 +6,23 @@ The project follows Semantic Versioning once the v1 public API is released. The 
 
 ## Unreleased
 
+## 1.2.0
+
+Adds the first NuBloxMetaObject single-entry platform facade while preserving the existing stable-v1 primitives.
+
+### Added
+
+- `createMetaObject()` as the primary product-level entry point.
+- `MetaObjectPlatform` owning built-in types, object metadata registration, object creation, validation, repository operations and storage selection.
+- `defineObject()` and `meta.*` built-in attribute builders for concise metadata definitions with TypeScript inference.
+- Built-in memory storage selection plus caller-owned `StorageAdapter` injection for external providers.
+- Platform capability discovery through `supports()` and `descriptor()`.
+
+### Architecture
+
+- The facade establishes the boundary required for NuBloxSQL-backed SQL storage providers without coupling application code to a dialect adapter.
+- Existing low-level exports remain available and source-compatible; the facade is additive.
+
 ## 1.1.1
 
 Patch release correcting the reusable M81 query-comparison conformance fixture for production persistent adapters.
