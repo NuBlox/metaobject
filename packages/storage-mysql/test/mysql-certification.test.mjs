@@ -22,6 +22,7 @@ const MAX_QUERY_MATRIX_MS = Number(process.env.M74_MAX_QUERY_MATRIX_MS ?? 15_000
 const MAX_PARALLEL_READ_MS = Number(process.env.M74_MAX_PARALLEL_READ_MS ?? 15_000);
 const MAX_CONTENTION_MS = Number(process.env.M74_MAX_CONTENTION_MS ?? 20_000);
 const MAX_MIGRATION_STAMPEDE_MS = Number(process.env.M74_MAX_MIGRATION_STAMPEDE_MS ?? 20_000);
+const MAX_POOL_DRAIN_MS = Number(process.env.M74_MAX_POOL_DRAIN_MS ?? 5_000);
 
 function tableName(suffix) {
   return `m74_${suffix}_${process.pid}`;
@@ -94,9 +95,22 @@ function createCertificationPool(connectionLimit = 8) {
   });
 }
 
+async function waitForPoolDrain(pool) {
+  const deadline = performance.now() + MAX_POOL_DRAIN_MS;
+  while (
+    pool.waitingCount !== 0
+    || pool.resettingCount !== 0
+    || pool.idleCount !== pool.totalCount
+  ) {
+    if (performance.now() >= deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 async function assertPoolHealthyAndDrained(pool) {
   const probe = await pool.query("SELECT 1 AS ok");
   assert.equal(Number(probe.rows[0]?.ok), 1);
+  await waitForPoolDrain(pool);
   assert.equal(pool.waitingCount, 0, "NuBloxSQL pool queue must drain");
   assert.equal(pool.resettingCount, 0, "NuBloxSQL pool resets must drain");
   assert.ok(pool.totalCount <= pool.connectionLimit, "NuBloxSQL pool must not exceed its connection limit");
