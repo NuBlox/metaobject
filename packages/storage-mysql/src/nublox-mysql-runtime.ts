@@ -70,9 +70,22 @@ function valuesPresent(values: readonly unknown[] | undefined): values is readon
   return values !== undefined && values.length > 0;
 }
 
+async function executePrepared(
+  connection: native.Connection,
+  sql: string,
+  values: readonly unknown[],
+): Promise<native.QueryResult<Record<string, unknown>>> {
+  const statement = await connection.prepare(sql);
+  try {
+    return await statement.execute<Record<string, unknown>>(values);
+  } finally {
+    await statement.close();
+  }
+}
+
 class ConnectionExecutor implements MySqlConnectionExecutor {
   readonly #connection: native.Connection;
-  readonly #owner?: native.Pool;
+  readonly #owner: native.Pool | undefined;
 
   constructor(connection: native.Connection, owner?: native.Pool) {
     this.#connection = connection;
@@ -84,7 +97,7 @@ class ConnectionExecutor implements MySqlConnectionExecutor {
     values?: readonly unknown[],
   ): Promise<MySqlQueryTuple<T>> {
     const result = valuesPresent(values)
-      ? await this.#connection.execute<Record<string, unknown>>(sql, values)
+      ? await executePrepared(this.#connection, sql, values)
       : await this.#connection.query<Record<string, unknown>>(sql);
     return tuple<T>(sql, result);
   }
@@ -93,7 +106,7 @@ class ConnectionExecutor implements MySqlConnectionExecutor {
     sql: string,
     values: readonly unknown[] = [],
   ): Promise<MySqlQueryTuple<T>> {
-    const result = await this.#connection.execute<Record<string, unknown>>(sql, values);
+    const result = await executePrepared(this.#connection, sql, values);
     return tuple<T>(sql, result);
   }
 
@@ -152,7 +165,7 @@ class PoolExecutor implements MySqlPoolExecutor {
     for (let attempt = 0; ; attempt += 1) {
       try {
         return await this.#pool.withTransaction(
-          (connection) => fn(new ConnectionExecutor(connection)),
+          (connection: native.Connection) => fn(new ConnectionExecutor(connection)),
           nativeOptions,
         );
       } catch (error) {
