@@ -37,7 +37,7 @@
   },
   "dependencies": {
     "@nublox/metaobject": "^1.1.1",
-    "nubloxsql": "github:NuBlox/NuBloxSQL#bc0a77b3d4fc645d8b8a7ab4aa723d2f6b320336"
+    "nubloxsql": "1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
