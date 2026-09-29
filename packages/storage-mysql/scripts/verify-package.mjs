@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const expectedRepository = "git+https://github.com/NuBlox/metaobject.git";
-const expectedMetaObjectVersion = "1.0.0";
+const expectedMetaObjectRange = "^1.1.1";
 const isPrerelease = String(packageJson.version).includes("-");
 const expectedDistTag = isPrerelease ? "next" : "latest";
 
 if (packageJson.name !== "@nublox/metaobject-storage-mysql") throw new Error("Unexpected package name.");
+if (packageJson.version !== "2.0.0") throw new Error("MySQL provider must be version 2.0.0 for the NuBloxSQL migration.");
 if (packageJson.license !== "Apache-2.0") throw new Error("Package licence must remain Apache-2.0.");
 if (packageJson.author !== "Stephen J T Spittal") throw new Error("Unexpected package author metadata.");
 if (packageJson.repository?.url !== expectedRepository) {
@@ -22,8 +23,14 @@ if (packageJson.publishConfig?.access !== "public" || packageJson.publishConfig?
 if (packageJson.scripts?.prepublishOnly !== "npm run release:check") {
   throw new Error("prepublishOnly must enforce the complete release gate.");
 }
-if (packageJson.dependencies?.["@nublox/metaobject"] !== expectedMetaObjectVersion) {
-  throw new Error(`MySQL adapter must target stable @nublox/metaobject@${expectedMetaObjectVersion}.`);
+if (packageJson.dependencies?.["@nublox/metaobject"] !== expectedMetaObjectRange) {
+  throw new Error(`MySQL provider must target compatible @nublox/metaobject ${expectedMetaObjectRange}.`);
+}
+if (!packageJson.dependencies?.nubloxsql) {
+  throw new Error("MySQL provider must depend on the single-entry NuBloxSQL package.");
+}
+if (packageJson.dependencies?.["@nublox/mysql"] !== undefined) {
+  throw new Error("MySQL provider must not depend on the retired direct @nublox/mysql package boundary.");
 }
 
 const output = execFileSync("npm", ["pack", "--dry-run", "--json"], {
