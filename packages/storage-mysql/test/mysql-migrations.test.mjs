@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPool } from "@nublox/mysql/promise";
+import NuBloxSQL from "nubloxsql";
 import {
   MYSQL_IDENTITY_COLLATION,
   MYSQL_METADATA_SCHEMA_VERSION,
@@ -14,6 +14,7 @@ import {
   migrateMySqlStorageSchema,
 } from "../dist/index.js";
 
+const { createPool } = NuBloxSQL.mysql;
 const configured = Boolean(process.env.MYSQL_HOST);
 
 function name(suffix) {
@@ -21,7 +22,7 @@ function name(suffix) {
 }
 
 async function columnCollations(pool, tableName, columns) {
-  const [rows] = await pool.execute(
+  const { rows } = await pool.execute(
     `SELECT COLUMN_NAME, COLLATION_NAME
        FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE()
@@ -41,9 +42,6 @@ test("M73/M79 versioned schema migrations are recoverable, serialized, drift-awa
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
     connectionLimit: 8,
-    timezone: "Z",
-    supportBigNumbers: true,
-    bigNumberStrings: true,
   });
 
   const migrationTableName = name("ledger");
@@ -110,7 +108,7 @@ test("M73/M79 versioned schema migrations are recoverable, serialized, drift-awa
     const left = new MySqlStorageAdapter(pool, { tableName: concurrentTable, migrations: options });
     const right = new MySqlStorageAdapter(pool, { tableName: concurrentTable, migrations: options });
     await Promise.all([left.initialize(), right.initialize()]);
-    const [concurrentLedger] = await pool.execute(
+    const { rows: concurrentLedger } = await pool.execute(
       `SELECT schema_version
          FROM \`${migrationTableName}\`
         WHERE component = ? AND target_table = ?
