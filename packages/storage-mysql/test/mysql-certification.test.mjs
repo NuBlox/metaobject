@@ -88,6 +88,7 @@ function createCertificationPool(connectionLimit = 8) {
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
     ssl: "disable",
+    getServerPublicKey: true,
     connectionLimit,
     queueLimit: 0,
   });
