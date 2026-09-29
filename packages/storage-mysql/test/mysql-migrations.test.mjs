@@ -41,6 +41,7 @@ test("M73/M79 versioned schema migrations are recoverable, serialized, drift-awa
     user: process.env.MYSQL_USER ?? "root",
     password: process.env.MYSQL_PASSWORD ?? "root",
     database: process.env.MYSQL_DATABASE ?? "metaobject_test",
+    ssl: "disable",
     connectionLimit: 8,
   });
 
