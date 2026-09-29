@@ -1,7 +1,7 @@
 {
   "name": "@nublox/metaobject-storage-mysql",
   "version": "2.0.0",
-  "description": "Release-qualified MySQL StorageAdapter, MetadataStore, safe query pushdown and versioned schema migrations for @nublox/metaobject, powered by the NuBlox native MySQL runtime.",
+  "description": "Release-qualified MySQL StorageAdapter, MetadataStore, safe query pushdown and versioned schema migrations for @nublox/metaobject, powered by NuBloxSQL.",
   "author": "Stephen J T Spittal",
   "type": "module",
   "sideEffects": false,
@@ -52,7 +52,7 @@
   },
   "dependencies": {
     "@nublox/metaobject": "^1.1.1",
-    "@nublox/mysql": "1.0.0"
+    "nubloxsql": "1.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
