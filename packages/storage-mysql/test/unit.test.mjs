@@ -203,8 +203,15 @@ test("metadata persistence boundaries fail before reaching MySQL", async () => {
 test("batch transactions retry transient lock failures by default and remain configurable", async () => {
   const calls = [];
   const connection = {
-    async execute() { return [{ affectedRows: 1 }, undefined]; },
-    async query() { return [[], undefined]; },
+    async query() { return { rows: [], fields: [], affectedRows: 0, insertId: 0, serverStatus: 0, warningCount: 0 }; },
+    async prepare() {
+      return {
+        async execute() {
+          return { rows: [], fields: [], affectedRows: 1, insertId: 0, serverStatus: 0, warningCount: 0 };
+        },
+        async close() {},
+      };
+    },
   };
   const pool = {
     async withTransaction(work, options) {
