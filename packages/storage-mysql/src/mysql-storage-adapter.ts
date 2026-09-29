@@ -174,7 +174,10 @@ export class MySqlStorageAdapter implements StorageAdapter {
   async update(snapshot: ObjectSnapshot, expectedVersion: number): Promise<ObjectSnapshot> {
     validateSnapshot(snapshot);
     validateExpectedVersion(expectedVersion, true);
-    return this.#update(this.#pool, snapshot, expectedVersion);
+    return this.#pool.withTransaction(
+      (connection) => this.#update(connection, snapshot, expectedVersion),
+      this.#transactionOptions,
+    );
   }
 
   async saveBatch(writes: readonly StorageBatchWrite[]): Promise<readonly ObjectSnapshot[]> {
@@ -201,14 +204,16 @@ export class MySqlStorageAdapter implements StorageAdapter {
   async delete(identity: ObjectIdentity, expectedVersion: number): Promise<void> {
     validateIdentity(identity);
     validateExpectedVersion(expectedVersion, false);
-    const [result] = await this.#pool.execute<MySqlCommandResult>(
-      `DELETE FROM ${this.#table} WHERE object_type = ? AND object_id = ? AND version = ?`,
-      [identity.type, identity.id, expectedVersion],
-    );
-    if (Number(result.affectedRows) > 0) return;
-    const actualVersion = await this.#getVersion(this.#pool, identity);
-    if (actualVersion === null) return;
-    throw new ConcurrencyError(`Optimistic concurrency conflict for '${objectKey(identity)}': expected version ${expectedVersion}, found ${actualVersion}.`);
+    await this.#pool.withTransaction(async (connection) => {
+      const [result] = await connection.execute<MySqlCommandResult>(
+        `DELETE FROM ${this.#table} WHERE object_type = ? AND object_id = ? AND version = ?`,
+        [identity.type, identity.id, expectedVersion],
+      );
+      if (Number(result.affectedRows) > 0) return;
+      const actualVersion = await this.#getVersion(connection, identity);
+      if (actualVersion === null) return;
+      throw new ConcurrencyError(`Optimistic concurrency conflict for '${objectKey(identity)}': expected version ${expectedVersion}, found ${actualVersion}.`);
+    }, this.#transactionOptions);
   }
 
   async get(identity: ObjectIdentity): Promise<ObjectSnapshot | null> {
