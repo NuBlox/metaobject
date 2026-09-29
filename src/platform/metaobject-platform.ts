@@ -40,26 +40,36 @@ export interface MetaObjectDescriptor {
   readonly capabilities: Readonly<Record<MetaObjectCapability, boolean>>;
 }
 
-type AttributeOptions = Omit<AttributeDefinition, "type">;
+export type MetaAttributeOptions = Omit<AttributeDefinition, "type">;
 
-type BuiltinAttribute<Name extends string> = AttributeDefinition & { readonly type: Name };
+type BuiltinAttribute<Name extends string, Options extends MetaAttributeOptions> =
+  Readonly<{ readonly type: Name } & Options>;
 
-function attribute<Name extends string>(type: Name, options: AttributeOptions = {}): BuiltinAttribute<Name> {
-  return Object.freeze({ type, ...options }) as BuiltinAttribute<Name>;
+function attribute<Name extends string, const Options extends MetaAttributeOptions>(
+  type: Name,
+  options: Options,
+): BuiltinAttribute<Name, Options> {
+  return Object.freeze({ type, ...options }) as BuiltinAttribute<Name, Options>;
+}
+
+function attributeBuilder<Name extends string>(type: Name) {
+  return <const Options extends MetaAttributeOptions = Record<never, never>>(
+    options: Options = {} as Options,
+  ): BuiltinAttribute<Name, Options> => attribute(type, options);
 }
 
 /** Convenience builders for the built-in metadata types. */
 export const meta = Object.freeze({
-  string: (options?: AttributeOptions) => attribute("string", options),
-  integer: (options?: AttributeOptions) => attribute("integer", options),
-  number: (options?: AttributeOptions) => attribute("number", options),
-  decimal: (options?: AttributeOptions) => attribute("decimal", options),
-  boolean: (options?: AttributeOptions) => attribute("boolean", options),
-  date: (options?: AttributeOptions) => attribute("date", options),
-  datetime: (options?: AttributeOptions) => attribute("datetime", options),
-  uuid: (options?: AttributeOptions) => attribute("uuid", options),
-  json: (options?: AttributeOptions) => attribute("json", options),
-  binary: (options?: AttributeOptions) => attribute("binary", options),
+  string: attributeBuilder("string"),
+  integer: attributeBuilder("integer"),
+  number: attributeBuilder("number"),
+  decimal: attributeBuilder("decimal"),
+  boolean: attributeBuilder("boolean"),
+  date: attributeBuilder("date"),
+  datetime: attributeBuilder("datetime"),
+  uuid: attributeBuilder("uuid"),
+  json: attributeBuilder("json"),
+  binary: attributeBuilder("binary"),
 });
 
 /** Define metadata without registering it. Registration occurs through MetaObjectPlatform.define(). */
